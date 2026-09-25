@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>hunyuan3d-proxy API Doc</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
+  <style>
+    body { margin: 0; background: #fafafa; }
+    .topbar { background: #1b1b1b; color: #f4f4f4; padding: 10px 20px; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; display: flex; gap: 16px; align-items: center; }
+    .topbar a { color: #7cc4ff; text-decoration: none; }
+    .topbar .warn { color: #f5c26b; }
+    #swagger-ui { max-width: 1200px; margin: 0 auto; }
+    #fallback { display: none; padding: 24px; font: 14px/1.6 sans-serif; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <strong>hunyuan3d-proxy API Doc</strong>
+    <span class="warn">仅用于学习用途</span>
+    <a href="/openapi.json">openapi.json</a>
+    <a href="/">Web 控制台</a>
+    <a href="/docs">/docs</a>
+  </div>
+  <div id="swagger-ui"></div>
+  <div id="fallback">
+    Swagger UI 资源加载失败（需要联网加载 CDN）。可直接查看
+    <a href="/openapi.json">/openapi.json</a> 原始规范，或离线导入 Swagger Editor。
+  </div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js" onerror="document.getElementById('fallback').style.display='block'"></script>
+  <script>
+    if (window.SwaggerUIBundle) {
+      window.ui = SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        docExpansion: "list",
+        defaultModelsExpandDepth: 1,
+        tryItOutEnabled: true,
+        presets: [SwaggerUIBundle.presets.apis],
+        layout: "BaseLayout"
+      });
+    }
+  </script>
+</body>
+</html>

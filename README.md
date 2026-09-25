@@ -20,7 +20,7 @@ hunyuan3d-proxy/
 │   ├── api-catalog.md
 │   └── ...
 ├── scripts/
-│   ├── hy_login_worker.js   # Playwright 扫码 worker
+│   ├── hy_login_worker.js   # （已弃用，仅存档）Playwright worker
 │   └── test_*.js            # 冒烟/测试脚本
 ├── data/
 │   └── cookies.json         # 登录会话（勿提交仓库）
@@ -32,16 +32,9 @@ hunyuan3d-proxy/
 ```powershell
 cd D:\lose\hunyuan3d-proxy
 
-# 可选：扫码 worker（真实微信二维码）
-$env:NODE_PATH = "D:\lose\.tools\pw\node_modules"
-Start-Process -FilePath "D:\lose\.tools\node\node.exe" `
-  -ArgumentList "scripts\hy_login_worker.js" -WindowStyle Hidden
-# 默认 LOGIN_WORKER=http://127.0.0.1:8793
-
 $env:PORT = "8812"
 $env:DATA_DIR = "D:\lose\hunyuan3d-proxy\data"
 $env:UPSTREAM = "https://3d.hunyuan.tencent.com"
-$env:LOGIN_WORKER = "http://127.0.0.1:8793"
 .\hunyuan3d-proxy.exe
 ```
 
@@ -52,6 +45,8 @@ $env:LOGIN_WORKER = "http://127.0.0.1:8793"
 ```
 
 浏览器打开：`http://127.0.0.1:8812/`
+
+API 文档（Swagger UI）：`http://127.0.0.1:8812/docs` · 规范：`/openapi.json`
 
 ## 编译
 
@@ -67,10 +62,11 @@ Copy-Item web\* . -Force   # 无需；服务直接读 web/
 | 能力 | 说明 |
 |------|------|
 | 双端点 | main `/api/3d/*` · concept `/game3d/*`，积分独立 |
-| 扫码登录 | 微信/QQ + Cookie 导入；redirect 用官网 `/scan?nonce` |
+| 扫码登录 | **微信纯协议直登**（qrconnect 轮询 + `POST /api/login/joint` 换会话入库）；**QQ 扫码已废弃** → Cookie 导入 |
 | 文生3D | `/api/text3d/main`（主站）· `/api/text3d/generate`（concept） |
 | 资源看板 | `/api/text3d/assets` + Web UI Toast/历史 |
 | 云 API | `/api/cloud/*` 对接腾讯云 ai3d（需 SecretId/Key） |
+| API 文档 | `/docs`（Swagger UI）+ `/openapi.json`（OpenAPI 3.0） |
 
 完整接口见 `docs/proxy-api.md`。
 

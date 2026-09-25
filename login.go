@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -180,6 +181,97 @@ func (ls *LoginService) captureSetCookies(resp *http.Response) int {
 	return n
 }
 
+// jointLogin calls the official joint-login API (POST /api/login/joint) with an
+// OAuth jsCode. The official SPA mirrors token/userId from the response body
+// into cookies m.Iq / hy_token via js-cookie, so we persist them into our jar
+// as well (Set-Cookie alone is often absent).
+func (ls *LoginService) jointLogin(typ, jsCode, appID string) map[string]interface{} {
+	types := []string{typ}
+	if typ == "wechat" || typ == "wx" {
+		types = []string{"wechat", "wx"}
+	}
+	var last map[string]interface{}
+	for _, t := range types {
+		payload := map[string]interface{}{"type": t, "jsCode": jsCode, "appid": appID}
+		if strings.HasPrefix(t, "qq") {
+			payload["redirectUri"] = "https://" + UpstreamHost + "/scan?nonce=" + randomNonce(8) + "&state=qq_login&isMobile=0"
+		}
+		raw, _ := json.Marshal(payload)
+		req, err := http.NewRequest(http.MethodPost, ls.srv.Cfg.Upstream+"/api/login/joint", bytes.NewReader(raw))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", DefaultUA)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/plain, */*")
+		req.Header.Set("Origin", "https://"+UpstreamHost)
+		req.Header.Set("Referer", RefererFor(ModeMain))
+		req.Header.Set("x-source", "web")
+		req.Header.Set("x-product", "hunyuan3d")
+		req.Header.Set("Trace-Id", randomNonce(32))
+		if c := ls.srv.Jar.CookieHeader(); c != "" {
+			req.Header.Set("Cookie", c)
+		}
+		client := &http.Client{Timeout: 20 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			last = map[string]interface{}{"ok": false, "type": t, "error": err.Error()}
+			continue
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		_ = resp.Body.Close()
+		setN := ls.captureSetCookies(resp)
+
+		var env struct {
+			ErrNo  int    `json:"errNo"`
+			ErrMsg string `json:"errMsg"`
+			Data   struct {
+				Token  string `json:"token"`
+				UserID string `json:"userId"`
+				OpenID string `json:"openId"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(body, &env)
+
+		mirror := map[string]string{}
+		if env.Data.Token != "" {
+			mirror["hy_token"] = env.Data.Token
+			mirror["hy3d_token"] = env.Data.Token
+		}
+		if env.Data.UserID != "" {
+			mirror["hy_user"] = env.Data.UserID
+			mirror["m.Iq"] = env.Data.UserID
+			mirror["x_hunyuan_inner_user_id"] = env.Data.UserID
+		}
+		mirrorN := 0
+		if len(mirror) > 0 {
+			mirrorN = ls.storeCookies(mirror)
+		}
+
+		snippet := string(body)
+		if len(snippet) > 240 {
+			snippet = snippet[:240] + "..."
+		}
+		last = map[string]interface{}{
+			"ok":        env.ErrNo == 0 || ls.srv.Jar.HasSessionHeuristic(),
+			"type":      t,
+			"status":    resp.StatusCode,
+			"errNo":     env.ErrNo,
+			"errMsg":    env.ErrMsg,
+			"setCookie": setN,
+			"mirrored":  mirrorN,
+			"body":      snippet,
+		}
+		if ls.srv.Jar.HasSessionHeuristic() && resp.StatusCode < 400 {
+			return last
+		}
+	}
+	if last == nil {
+		last = map[string]interface{}{"ok": false, "error": "no attempt"}
+	}
+	return last
+}
+
 func (ls *LoginService) currentState() LoginState {
 	jar := ls.srv.Jar
 	st := LoginState{
@@ -195,6 +287,8 @@ func (ls *LoginService) currentState() LoginState {
 	if st.InnerUserID == "" {
 		st.InnerUserID = jarValue(jar, "m.Iq")
 	}
+	// Never expose the raw account id to API consumers / Web UI.
+	st.InnerUserID = maskID(st.InnerUserID)
 	if st.LoggedIn {
 		st.Notes = "session ready; proxy forwards cookies + x_hunyuan_inner_user_id"
 	} else {
@@ -267,7 +361,7 @@ func (ls *LoginService) HandleProviders(w http.ResponseWriter, r *http.Request) 
 		"jointAppIds": apps,
 		"redirectPolicy": map[string]string{
 			"wechat": "https://3d.hunyuan.tencent.com/scan?nonce=...",
-			"qq":     "https://3d.hunyuan.tencent.com/login",
+			"qq":     "https://3d.hunyuan.tencent.com/scan?nonce=...&state=qq_login&isMobile=0",
 		},
 	})
 }
@@ -351,10 +445,21 @@ func (ls *LoginService) HandleOAuthCallback(w http.ResponseWriter, r *http.Reque
 	writeOK(w, result)
 }
 
-// exchangeOAuth calls candidate upstream auth endpoints and captures Set-Cookie.
+// exchangeOAuth trades an OAuth code for session cookies.
+// Primary: official POST /api/login/joint (what the SPA itself calls).
+// Fallback: probe legacy auth endpoints and capture Set-Cookie.
 func (ls *LoginService) exchangeOAuth(r *http.Request, provider, appID, code, state string) map[string]interface{} {
+	typ := provider
+	if typ == "wx" {
+		typ = "wechat"
+	}
+	joint := ls.jointLogin(typ, code, appID)
+	if ok, _ := joint["ok"].(bool); ok {
+		return map[string]interface{}{"ok": true, "used": "/api/login/joint", "joint": joint, "state": ls.currentState()}
+	}
+
 	base := ls.srv.Cfg.Upstream
-	// signature: use empty / code / our web signature as fallbacks 鈥?upstream may ignore.
+	// signature: use empty / code / our web signature as fallbacks — upstream may ignore.
 	sigs := []string{"", code, "1"}
 	paths := []string{
 		"/api/open/auth",
@@ -422,14 +527,15 @@ func (ls *LoginService) exchangeOAuth(r *http.Request, provider, appID, code, st
 	}
 	// JSON body token salvage
 	return map[string]interface{}{
-		"ok": false,
-		"note": "upstream exchange inconclusive; scan in browser on 3d.hunyuan.tencent.com then import cookies if needed",
+		"ok":    false,
+		"joint": joint,
+		"note":  "joint + legacy exchange inconclusive; use Cookie 导入 if needed",
 		"attempts": attempts,
 		"state":    ls.currentState(),
 	}
 }
 
-// HandleQRStatus is implemented in login_qr.go (Playwright worker aware).
+// HandleQRStatus is implemented in login_qr.go.
 
 // ---- email / phone login (prop-injected upstream paths are unknown; probe candidates) ----
 

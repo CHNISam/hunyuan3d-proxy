@@ -1,0 +1,568 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "hunyuan3d-proxy API",
+    "version": "1.1.0",
+    "description": "腾讯混元3D 反代服务器的本地 API。**仅用于学习用途**，请遵守腾讯服务条款。\n\n三套入口：\n- **main** 网页反代（Cookie 鉴权）→ 3d.hunyuan.tencent.com `/api/3d/*`\n- **concept** 网页反代（Cookie 鉴权）→ `/game3d/*`、`/3d/*`\n- **cloud** 官方 API（SecretId/Key + TC3 签名）→ ai3d.tencentcloudapi.com\n\n本地接口统一返回包络 `{ok, data?, error?}`；透传类接口返回上游原始响应。",
+    "license": { "name": "For learning purposes only (仅用于学习用途)" }
+  },
+  "servers": [
+    { "url": "/", "description": "当前服务（跟随访问端口）" }
+  ],
+  "tags": [
+    { "name": "Meta", "description": "健康检查 / 模式 / 签名调试" },
+    { "name": "登录", "description": "扫码、Cookie 导入、邮箱/手机验证码" },
+    { "name": "积分", "description": "main / concept 两端独立积分查询" },
+    { "name": "文生3D", "description": "Go 侧封装的生成与作品列表" },
+    { "name": "资源看板", "description": "生成任务与中间产物看板" },
+    { "name": "云端API", "description": "腾讯云官方 ai3d（TC3 签名由本服务代签）" },
+    { "name": "网页反代", "description": "main / concept 网页接口透传" }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Meta"],
+        "summary": "健康检查",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "服务状态",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } }
+          }
+        }
+      }
+    },
+    "/api/mode": {
+      "get": {
+        "tags": ["Meta"],
+        "summary": "查询默认模式",
+        "operationId": "getMode",
+        "responses": {
+          "200": {
+            "description": "当前模式",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Meta"],
+        "summary": "设置默认模式",
+        "operationId": "setMode",
+        "parameters": [
+          { "name": "mode", "in": "query", "required": false, "schema": { "type": "string", "enum": ["main", "concept"] }, "description": "也可放请求头 X-Hy-Mode 或 body {\"mode\":\"...\"}" }
+        ],
+        "responses": {
+          "200": { "description": "已设置", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } },
+          "400": { "description": "缺少 mode 参数" }
+        }
+      }
+    },
+    "/api/sign/debug": {
+      "get": {
+        "tags": ["Meta"],
+        "summary": "网页端签名自测（模块 47436）",
+        "operationId": "signDebug",
+        "description": "返回 HMAC 键、样例签名与算法说明。键 `Hf6d6KFB3D`，算法 `Hex(HmacSHA256(canonical, key))`，字段 `timestamp`/`nonce`/`sign` 附着在 query 上；仅主站 creations 家族需要，concept `/game3d/*` 不加签。",
+        "responses": {
+          "200": { "description": "签名自测载荷", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/qr/start": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "启动扫码登录",
+        "operationId": "qrStart",
+        "description": "返回微信 WxLogin 授权 URL 与 ticket；配合 Playwright worker 可得真实二维码。",
+        "responses": {
+          "200": { "description": "授权链接与 ticket", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/qr/status": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "轮询扫码状态",
+        "operationId": "qrStatus",
+        "parameters": [
+          { "name": "ticket", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "pending | scanned | success | expired | failed | unknown",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } }
+          }
+        }
+      }
+    },
+    "/api/login/qr/image": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "获取登录二维码图片",
+        "operationId": "qrImage",
+        "parameters": [
+          { "name": "ticket", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "PNG 二维码", "content": { "image/png": { "schema": { "type": "string", "format": "binary" } } } }
+        }
+      }
+    },
+    "/api/login/status": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "查询会话状态",
+        "operationId": "loginStatus",
+        "description": "敏感字段已脱敏：`innerUserId` 仅保留前后缀，Cookie 只回名称与数量；积分/用户信息中的手机号与 token 在服务端统一掩码。",
+        "responses": {
+          "200": { "description": "登录态与状态摘要", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/logout": {
+      "post": {
+        "tags": ["登录"],
+        "summary": "退出并清空 Cookie",
+        "operationId": "loginLogout",
+        "responses": {
+          "200": { "description": "loggedOut=true", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/cookies": {
+      "post": {
+        "tags": ["登录"],
+        "summary": "导入浏览器 Cookie",
+        "operationId": "importCookies",
+        "description": "把浏览器中 3d.hunyuan.tencent.com 的 Cookie 粘贴导入。关键键：`hy_user`、`hy_token`、`userInfo`、`hy_device_id`。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "description": "Cookie 字符串或键值结构，详见 docs/proxy-api.md", "additionalProperties": true },
+              "example": { "cookies": "hy_user=...; hy_token=..." }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "导入结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/providers": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "可用登录方式",
+        "operationId": "loginProviders",
+        "responses": {
+          "200": { "description": "providers 列表", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/oauth/callback": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "OAuth 回调换会话",
+        "operationId": "oauthCallback",
+        "parameters": [
+          { "name": "code", "in": "query", "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "schema": { "type": "string" } },
+          { "name": "ticket", "in": "query", "schema": { "type": "string" } },
+          { "name": "provider", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "换会话结果并回跳 Web UI", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/email/send-code": {
+      "post": {
+        "tags": ["登录"],
+        "summary": "邮箱验证码登录（发码）",
+        "operationId": "emailSendCode",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": {
+          "200": { "description": "ok / attempts / state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/email/verify": {
+      "post": {
+        "tags": ["登录"],
+        "summary": "邮箱验证码登录（校验）",
+        "operationId": "emailVerify",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": {
+          "200": { "description": "校验结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/phone/send-code": {
+      "post": {
+        "tags": ["登录"],
+        "summary": "手机验证码登录（发码）",
+        "operationId": "phoneSendCode",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": {
+          "200": { "description": "ok / attempts / state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/login/phone/verify": {
+      "post": {
+        "tags": ["登录"],
+        "summary": "手机验证码登录（校验）",
+        "operationId": "phoneVerify",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": {
+          "200": { "description": "校验结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/credit/{which}": {
+      "get": {
+        "tags": ["积分"],
+        "summary": "查询积分（两端独立）",
+        "operationId": "getCredit",
+        "parameters": [
+          { "name": "which", "in": "path", "required": true, "schema": { "type": "string", "enum": ["main", "concept", "all"] } }
+        ],
+        "responses": {
+          "200": { "description": "对应端点的积分快照（含上游调用明细）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/text3d/generate": {
+      "post": {
+        "tags": ["文生3D"],
+        "summary": "Concept 文生3D（扣 concept remainingTimes）",
+        "operationId": "text3dGenerate",
+        "description": "提交 concept 设计图（text2image）与/或几何生成（text2geometry）。",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Text3DRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "提交结果（上游作品信息）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } },
+          "400": { "description": "prompt 缺失或 JSON 非法" }
+        }
+      }
+    },
+    "/api/text3d/works": {
+      "get": {
+        "tags": ["文生3D"],
+        "summary": "Concept 作品列表",
+        "operationId": "text3dWorks",
+        "parameters": [
+          { "name": "pipeline", "in": "query", "required": false, "schema": { "type": "string" }, "description": "worksPipeline 过滤，数字或名称" }
+        ],
+        "responses": {
+          "200": { "description": "作品摘要列表（含 resultUrls）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/text3d/main": {
+      "post": {
+        "tags": ["文生3D"],
+        "summary": "主站文生3D（扣主站 remainQuota）",
+        "operationId": "text3dMain",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Text3DRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "返回 creationsId", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } },
+          "400": { "description": "prompt 缺失" }
+        }
+      }
+    },
+    "/api/text3d/main/list": {
+      "post": {
+        "tags": ["文生3D"],
+        "summary": "主站作品列表",
+        "operationId": "text3dMainList",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MainListRequest" },
+              "example": { "limit": 5, "offset": 0, "sceneTypeList": [] }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "creations 列表与 totalCount", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/text3d/assets": {
+      "get": {
+        "tags": ["资源看板"],
+        "summary": "生成任务与中间产物看板",
+        "operationId": "assetBoard",
+        "description": "聚合 main `creations/list` 与 concept `get_works_list`，展平 geometry / PBR / 视图 / glb 等中间产物；本地 UI 会合并历史。",
+        "parameters": [
+          { "name": "source", "in": "query", "schema": { "type": "string", "enum": ["all", "main", "concept"], "default": "all" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 24 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["all", "processing", "success", "failed"], "default": "all" } }
+        ],
+        "responses": {
+          "200": { "description": "看板数据", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AssetBoardResponse" } } } }
+        }
+      }
+    },
+    "/api/cloud": {
+      "get": {
+        "tags": ["云端API"],
+        "summary": "列出云端能力与 Action 映射",
+        "operationId": "cloudInfo",
+        "responses": {
+          "200": { "description": "product/version/actions/credentialed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/cloud/{slug}": {
+      "post": {
+        "tags": ["云端API"],
+        "summary": "按 slug 调用官方 ai3d Action",
+        "operationId": "cloudBySlug",
+        "description": "TC3-HMAC-SHA256 签名由本服务代签。密钥来自环境变量 `TENCENT_SECRET_ID`/`TENCENT_SECRET_KEY` 或请求头 `x-secret-id`/`x-secret-key`。官方文档：https://cloud.tencent.com/document/product/1804/120838",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["submit-pro", "query-pro", "submit-rapid", "query-rapid", "submit-texture", "query-texture", "submit-reduce-face", "query-reduce-face", "submit-part", "query-part", "submit-uv", "query-uv", "submit-motion", "query-motion", "submit-rigging", "query-rigging", "submit-profile", "query-profile", "convert-format"]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "additionalProperties": true, "description": "对应 Action 的官方入参，如 Prompt/Model/JobId" },
+              "example": { "Prompt": "一只小猫", "Model": "3.0", "GenerateType": "Normal" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "{ok, source, action, data:{Response}}", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/cloud/action/{Action}": {
+      "post": {
+        "tags": ["云端API"],
+        "summary": "按官方 Action 名调用",
+        "operationId": "cloudByAction",
+        "parameters": [
+          { "name": "Action", "in": "path", "required": true, "schema": { "type": "string" }, "description": "如 SubmitHunyuanTo3DProJob / QueryHunyuanTo3DProJob（完整列表见 GET /api/cloud）" }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": {
+          "200": { "description": "官方响应包络", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
+        }
+      }
+    },
+    "/api/3d/{subpath}": {
+      "get": {
+        "tags": ["网页反代"],
+        "summary": "主站 GET 透传",
+        "operationId": "mainProxyGet",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" }, "description": "如 config、creations/detail、planCreditInfo、purchaseList" }],
+        "responses": { "200": { "description": "上游原始响应" } }
+      },
+      "post": {
+        "tags": ["网页反代"],
+        "summary": "主站 POST 透传（creations 家族自动签名）",
+        "operationId": "mainProxyPost",
+        "description": "代理注入 `x-source: web`、`x-product: hunyuan3d` 与 Cookie；`/api/3d/creations/*` 等家族自动附加 timestamp/nonce/sign 签名。",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" }, "description": "如 creations/generations、creations/list、quotainfo、resource/genUploadInfo" }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": { "200": { "description": "上游原始响应" } }
+      }
+    },
+    "/game3d/{subpath}": {
+      "get": {
+        "tags": ["网页反代"],
+        "summary": "Concept GET 透传",
+        "operationId": "conceptProxyGet",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" }, "description": "如 share/detail" }],
+        "responses": { "200": { "description": "上游原始响应（{errNo, errMsg, data}）" } }
+      },
+      "post": {
+        "tags": ["网页反代"],
+        "summary": "Concept POST 透传（不加签）",
+        "operationId": "conceptProxyPost",
+        "description": "常用家族：general_info / resource / concept_design / geometry_generation / component_splitting / texture_painting / low_poly_topology / motion_* / share / feedback。响应包络 `{errNo, errMsg, data}`，`errNo===0` 成功。",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": { "200": { "description": "上游原始响应" } }
+      }
+    },
+    "/api/concept/{subpath}": {
+      "get": {
+        "tags": ["网页反代"],
+        "summary": "Concept 别名 GET（/api/concept/game3d/...）",
+        "operationId": "conceptAliasGet",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "上游原始响应" } }
+      },
+      "post": {
+        "tags": ["网页反代"],
+        "summary": "Concept 别名 POST",
+        "operationId": "conceptAliasPost",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": { "200": { "description": "上游原始响应" } }
+      }
+    },
+    "/3d/{subpath}": {
+      "get": {
+        "tags": ["网页反代"],
+        "summary": "Concept 用户信息族透传（/3d/*）",
+        "operationId": "concept3dGet",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" }, "description": "如 getuserinfo" }],
+        "responses": { "200": { "description": "上游原始响应" } }
+      },
+      "post": {
+        "tags": ["网页反代"],
+        "summary": "Concept 用户信息族透传 POST",
+        "operationId": "concept3dPost",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": { "200": { "description": "上游原始响应" } }
+      }
+    },
+    "/new-portal/{subpath}": {
+      "post": {
+        "tags": ["网页反代"],
+        "summary": "白名单等 new-portal 透传",
+        "operationId": "newPortalPost",
+        "parameters": [{ "name": "subpath", "in": "path", "required": true, "schema": { "type": "string" }, "description": "如 whitelist/apply、whitelist/query" }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": { "200": { "description": "上游原始响应" } }
+      }
+    },
+    "/proxy/{mode}/{path}": {
+      "post": {
+        "tags": ["网页反代"],
+        "summary": "任意路径通用透传",
+        "operationId": "genericProxy",
+        "description": "格式 `/proxy/{main|concept}/{upstream/path}`；也可用 `/api/main/{path}`（main）与 `/api/concept/{path}`（concept）前缀。",
+        "parameters": [
+          { "name": "mode", "in": "path", "required": true, "schema": { "type": "string", "enum": ["main", "concept"] } },
+          { "name": "path", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+        "responses": { "200": { "description": "上游原始响应" }, "400": { "description": "路径格式错误" } }
+      }
+    },
+    "/api/jointappid": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "联合登录 appId（上游透传）",
+        "operationId": "jointAppId",
+        "responses": { "200": { "description": "上游原始响应" } }
+      }
+    },
+    "/api/open/auth": {
+      "get": {
+        "tags": ["登录"],
+        "summary": "OAuth 授权入口（上游透传）",
+        "operationId": "openAuth",
+        "responses": { "200": { "description": "上游原始响应" } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "description": "本地接口统一包络",
+        "required": ["ok"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "data": { "description": "业务负载（结构随接口而异）" },
+          "error": { "type": "string", "description": "ok=false 时的错误信息" },
+          "mode": { "type": "string", "enum": ["main", "concept"] }
+        }
+      },
+      "ConceptEnvelope": {
+        "type": "object",
+        "description": "concept 上游包络（透传）",
+        "properties": {
+          "errNo": { "type": "integer", "description": "0 成功" },
+          "errMsg": { "type": "string" },
+          "data": {}
+        }
+      },
+      "Text3DRequest": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": {
+          "prompt": { "type": "string", "description": "文本描述，必填" },
+          "style": { "type": "string", "description": "concept 风格：q_version | steampunk | hand_drawn | cartoon ..." },
+          "modelVersion": { "type": "string", "enum": ["v3.0", "v3.1", "v3.5", "v3.5-preview"], "default": "v3.1" },
+          "faceCount": { "type": "integer", "default": 500000, "minimum": 3000, "maximum": 1500000 },
+          "apose": { "type": "boolean" },
+          "worksType": { "type": "integer" },
+          "mode": { "type": "string", "enum": ["concept-design", "text-geometry", "both"], "description": "仅 /api/text3d/generate" }
+        }
+      },
+      "MainListRequest": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "default": 20 },
+          "offset": { "type": "integer", "default": 0 },
+          "sceneTypeList": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "AssetBoardResponse": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "source": { "type": "string", "enum": ["all", "main", "concept"] },
+              "statusFilter": { "type": "string" },
+              "limit": { "type": "integer" },
+              "offset": { "type": "integer" },
+              "totalCount": { "type": "integer" },
+              "count": { "type": "integer" },
+              "items": { "type": "array", "items": { "$ref": "#/components/schemas/AssetItem" } },
+              "credits": { "type": "object", "description": "main / concept 积分快照" },
+              "endpoints": { "type": "object" },
+              "hint": { "type": "string" }
+            }
+          }
+        }
+      },
+      "AssetItem": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "enum": ["main", "concept"] },
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "prompt": { "type": "string" },
+          "status": { "type": "string", "enum": ["processing", "success", "failed", "unknown"] },
+          "progress": {},
+          "pipeline": {},
+          "modelType": { "type": "string" },
+          "style": { "type": "string" },
+          "createdAt": {},
+          "updatedAt": {},
+          "error": { "type": "string" },
+          "previewUrl": { "type": "string", "format": "uri" },
+          "primaryModelUrl": { "type": "string", "format": "uri" },
+          "assets": { "type": "object", "additionalProperties": { "type": "string", "format": "uri" }, "description": "展平的中间产物 URL 表（geometry / PBR / 视图 / glb / fbx…）" },
+          "notes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

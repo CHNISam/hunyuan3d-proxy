@@ -1,0 +1,15 @@
+{
+  "name": "hunyuan3d-proxy",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test:ui": "bun run ui.test.mjs"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "playwright": "^1.63.0"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  }
+}

@@ -133,7 +133,7 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 }
 .chip.active { background: rgba(91,140,255,.2); color: #d7e3ff; }
 
-.grid-3, .grid-2, .credit-pair, .login-status, .form-row, .row, .docs-row, .preset-row {
+.grid-3, .grid-2, .credit-pair, .login-status, .form-row, .row, .docs-row {
   display: flex; gap: 10px; flex-wrap: wrap;
 }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
@@ -203,14 +203,6 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   color: #c7d0e0;
 }
 .out.tall { max-height: 280px; min-height: 140px; }
-
-.preset-row { margin: 4px 0 8px; }
-.preset {
-  border: 1px dashed rgba(255,255,255,.15);
-  background: transparent; color: var(--muted);
-  border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer;
-}
-.preset:hover { color: var(--text); border-color: rgba(91,140,255,.5); }
 
 .cloud-map { display: grid; gap: 6px; margin-bottom: 10px; max-height: 220px; overflow: auto; }
 .cloud-map-item {

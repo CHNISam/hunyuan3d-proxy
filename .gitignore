@@ -7,3 +7,6 @@ data/*
 
 # 本地构建产物
 hunyuan3d-proxy-linux
+
+# Node/Bun 测试依赖
+node_modules/

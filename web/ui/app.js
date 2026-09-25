@@ -1,6 +1,5 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const baseInput = $("baseUrl");
 
   function publicOrigin() {
     if (
@@ -14,11 +13,10 @@
     return "http://127.0.0.1:8811";
   }
 
+  // 同源自连接：控制台始终由代理自身托管，无需手动填 Proxy 地址。
   function base() {
-    const v = (baseInput.value || "").trim();
-    return v ? v.replace(/\/$/, "") : publicOrigin();
+    return publicOrigin();
   }
-  baseInput.value = publicOrigin();
 
   // ---------- Toast ----------
   function toast(kind, title, msg, ms) {
@@ -70,7 +68,6 @@
   // ---------- State ----------
   let qrTicket = "";
   let pollTimer = null;
-  let apiScope = "main";
   let assetTimer = null;
   let assetSource = "all";
   let assetStatus = "all";
@@ -78,25 +75,6 @@
   const assetLimit = 24;
   const assetHistory = new Map(); // id -> item (local merge, keeps history)
   let assetServerTotal = 0;
-
-  const presets = {
-    main: [
-      { label: "config", method: "GET", path: "/api/3d/config", body: null },
-      { label: "quotainfo", method: "POST", path: "/api/3d/quotainfo", body: {} },
-      { label: "planCredit", method: "GET", path: "/api/3d/planCreditInfo", body: null },
-      { label: "generations", method: "POST", path: "/api/3d/creations/generations", body: { prompt: "一只小猫" } },
-    ],
-    concept: [
-      { label: "userinfo", method: "GET", path: "/3d/getuserinfo", body: null },
-      { label: "remaining", method: "POST", path: "/game3d/general_info/get_remaining_times", body: {} },
-      { label: "works", method: "POST", path: "/game3d/general_info/get_works_list", body: {} },
-      { label: "text2geo", method: "POST", path: "/game3d/geometry_generation/text2geometry", body: { prompt: "robot" } },
-    ],
-    cloud: [
-      { label: "cloud list", method: "GET", path: "/api/cloud", body: null },
-      { label: "submit-pro", method: "POST", path: "/api/cloud/submit-pro", body: { Prompt: "一只小猫", Model: "3.0" } },
-    ],
-  };
 
   const ASSET_LABELS = {
     image_url: "预览图",
@@ -118,12 +96,26 @@
     "geometryGenerationRsp.glbUrl", "geometryGenerationRsp.fbxUrl",
   ];
 
+  // ---------- Sensitive display masking ----------
+  function maskId(s) {
+    s = String(s || "");
+    if (!s) return "";
+    if (s.length <= 8) return "***";
+    return s.slice(0, 6) + "…" + s.slice(-2);
+  }
+  function scrubLogText(s) {
+    return String(s).replace(
+      /([?&](?:ticket|session|nonce|code|token)=)[^&\s"]+/gi,
+      "$1***"
+    );
+  }
+
   function log(msg, obj) {
     const el = $("logOut");
     if (!el) return;
     const ts = new Date().toLocaleTimeString();
-    const line = `[${ts}] ${msg}`;
-    const extra = obj !== undefined ? "\n" + JSON.stringify(obj, null, 2) : "";
+    const line = scrubLogText(`[${ts}] ${msg}`);
+    const extra = obj !== undefined ? "\n" + scrubLogText(JSON.stringify(obj, null, 2)) : "";
     el.textContent = (el.textContent === "—" ? "" : el.textContent + "\n") + line + extra;
     el.scrollTop = el.scrollHeight;
   }
@@ -233,7 +225,7 @@
     const d = payload && payload.data ? payload.data : payload || {};
     const inner = d.ticket || d.url || d.qrProxyUrl ? d : d.data || d;
     qrTicket = inner.ticket || inner.id || "";
-    $("qrTicket").textContent = qrTicket || "—";
+    $("qrTicket").textContent = qrTicket ? maskId(qrTicket) : "—";
     $("qrProvider").textContent = inner.provider || "—";
     $("qrStatus").textContent = inner.status || "—";
     const redirect = inner.redirectUri || inner.payload?.redirectUri || inner.callback || "—";
@@ -286,8 +278,8 @@
       },
       {
         loading: "正在创建扫码会话…",
-        hint: "Playwright 打开官方登录页并抓取二维码",
-        okMsg: (r) => `ticket=${r.data?.data?.ticket || "?"} · 请扫码`,
+        hint: "官方登录页出码",
+        okMsg: (r) => `ticket=${maskId(r.data?.data?.ticket || "")} · 请扫码`,
       }
     );
   }
@@ -344,7 +336,6 @@
       "导入 Cookie",
       async () => {
         const res = await api("/api/login/cookies", { method: "POST", body });
-        $("apiOut").textContent = JSON.stringify(res.data, null, 2);
         await refreshLogin(true);
         if (res.ok) {
           const names = res.data?.data?.cookieNames || [];
@@ -443,7 +434,6 @@
         const res = await api("/api/credit/all");
         renderCreditMain(res);
         renderCreditConcept(res);
-        $("apiOut").textContent = JSON.stringify(res.data, null, 2);
         return res;
       },
       {
@@ -457,60 +447,6 @@
     );
   }
 
-  function renderPresets() {
-    const row = $("presetRow");
-    row.innerHTML = "";
-    const list = presets[apiScope] || [];
-    const dl = $("apiPaths");
-    dl.innerHTML = "";
-    list.forEach((p) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "preset";
-      b.textContent = p.label;
-      b.onclick = () => {
-        $("apiMethod").value = p.method;
-        $("apiPath").value = p.path;
-        $("apiBody").value = p.body == null ? "{}" : JSON.stringify(p.body, null, 2);
-        toast("info", "已填入预设", p.label);
-      };
-      row.appendChild(b);
-      const opt = document.createElement("option");
-      opt.value = p.path;
-      dl.appendChild(opt);
-    });
-    if (list[0]) {
-      $("apiMethod").value = list[0].method;
-      $("apiPath").value = list[0].path;
-      $("apiBody").value = list[0].body == null ? "{}" : JSON.stringify(list[0].body, null, 2);
-    }
-  }
-
-  async function sendApi() {
-    const method = $("apiMethod").value;
-    let path = $("apiPath").value.trim();
-    if (!path.startsWith("/")) path = "/" + path;
-    let body;
-    const raw = $("apiBody").value.trim();
-    if (method !== "GET" && raw && raw !== "{}") {
-      try {
-        body = JSON.parse(raw);
-      } catch (e) {
-        toast("err", "JSON 无效", e.message);
-        return;
-      }
-    } else if (method !== "GET") body = {};
-    return withToast(
-      `${method} ${path}`,
-      async () => {
-        const res = await api(path, { method, body });
-        $("apiOut").textContent = JSON.stringify(res.data, null, 2);
-        return res;
-      },
-      { okMsg: (r) => `HTTP ${r.status}` }
-    );
-  }
-
   function handleOAuthReturn() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("login") !== "1" && !params.get("ticket") && !params.get("code")) return;
@@ -519,11 +455,11 @@
     const status = params.get("status") || "";
     const banner = $("oauthBanner");
     banner.hidden = false;
-    banner.textContent = `OAuth 返回：${provider || "?"} ticket=${ticket || "?"} status=${status || "?"}`;
+    banner.textContent = `OAuth 返回：${provider || "?"} ticket=${maskId(ticket)} status=${status || "?"}`;
     toast("info", "OAuth 返回", `${provider || ""} ${status || ""}`);
     if (ticket) {
       qrTicket = ticket;
-      $("qrTicket").textContent = ticket;
+      $("qrTicket").textContent = maskId(ticket);
       $("qrProvider").textContent = provider || "—";
       $("qrStatus").textContent = status || "—";
       startPolling();
@@ -687,9 +623,17 @@
     };
   });
 
-  $("btnHealth").onclick = () => refreshHealth(false);
   $("btnQRStart").onclick = () => startLogin("wechat");
-  $("btnQQStart").onclick = () => startLogin("qq");
+  $("btnQQStart").onclick = () => {
+    // QQ 扫码已废弃（redirect 校验收紧 + ptqrlogin 拒绝非浏览器客户端）→ Cookie 导入
+    toast("info", "QQ 扫码已废弃", "请使用 Cookie 导入登录");
+    const tab = document.querySelector('#loginTabs .chip[data-tab="cookie"]');
+    if (tab) tab.click();
+    const msg = $("qrMessage");
+    if (msg)
+      msg.textContent =
+        "QQ 扫码登录已废弃：请在浏览器登录 3d.hunyuan.tencent.com，F12 → Application → Cookies 复制 hy_user / hy_token，粘贴到下方「Cookie 导入」。";
+  };
   $("btnQRPoll").onclick = async () => {
     await withToast("刷新登录状态", async () => {
       await refreshLogin(true);
@@ -711,7 +655,6 @@
   $("btnCreditMain").onclick = () => creditMain(false);
   $("btnCreditConcept").onclick = () => creditConcept(false);
   $("btnCreditAll").onclick = () => creditAll(false);
-  $("btnSend").onclick = sendApi;
   $("btnSign").onclick = () =>
     withToast("签名调试", async () => {
       const res = await api("/api/sign/debug");
@@ -734,7 +677,6 @@
         method: "POST",
         body: { email, captchaTicket: "", captchaRandstr: "" },
       });
-      $("apiOut").textContent = JSON.stringify(res.data, null, 2);
       return res;
     });
   $("btnEmailVerify").onclick = () =>
@@ -745,7 +687,6 @@
         method: "POST",
         body: { email, verificationCode },
       });
-      $("apiOut").textContent = JSON.stringify(res.data, null, 2);
       await refreshLogin(true);
       return res;
     });
@@ -756,7 +697,6 @@
         method: "POST",
         body: { phone, captchaTicket: "", captchaRandstr: "" },
       });
-      $("apiOut").textContent = JSON.stringify(res.data, null, 2);
       return res;
     });
   $("btnPhoneVerify").onclick = () =>
@@ -767,7 +707,6 @@
         method: "POST",
         body: { phone, verificationCode },
       });
-      $("apiOut").textContent = JSON.stringify(res.data, null, 2);
       await refreshLogin(true);
       return res;
     });
@@ -789,17 +728,6 @@
         },
         { okMsg: () => `mode=${b.dataset.mode}` }
       );
-  });
-
-  document.querySelectorAll("#apiModeSwitch .chip").forEach((b) => {
-    b.onclick = () => {
-      apiScope = b.dataset.apiscope;
-      document.querySelectorAll("#apiModeSwitch .chip").forEach((x) =>
-        x.classList.toggle("active", x === b)
-      );
-      renderPresets();
-      toast("info", "端点分组", apiScope);
-    };
   });
 
   document.querySelectorAll("#assetSourceSwitch .chip").forEach((b) => {
@@ -835,17 +763,18 @@
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      refreshLogin(true).then(() => {
-        if (qrTicket) doPoll(true);
-        refreshAssets(true);
-      });
+      refreshHealth(true).then(() =>
+        refreshLogin(true).then(() => {
+          if (qrTicket) doPoll(true);
+          refreshAssets(true);
+        })
+      );
     }
   });
 
-  renderPresets();
   handleOAuthReturn();
   (async () => {
-    toast("info", "控制台加载中", base());
+    toast("info", "自动连接", base());
     await refreshHealth(true);
     await refreshLogin(true);
     await refreshAssets(true);

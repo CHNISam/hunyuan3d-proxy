@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // route is a registered fixed proxy route.
@@ -19,7 +16,7 @@ type route struct {
 }
 
 // buildMux registers every local API route on mux.
-func buildMux(s *Server, login *LoginService) *http.ServeMux {
+func buildMux(s *Server, login *LoginService) http.Handler {
 	mux := http.NewServeMux()
 
 	// ---------- meta ----------
@@ -85,38 +82,6 @@ func buildMux(s *Server, login *LoginService) *http.ServeMux {
 	mux.HandleFunc("/api/login/qr/start", login.HandleQRStart)
 	mux.HandleFunc("/api/login/qr/status", login.HandleQRStatus)
 	mux.HandleFunc("/api/login/qr/image", login.HandleQRImage)
-	mux.HandleFunc("/api/login/worker/", func(w http.ResponseWriter, r *http.Request) {
-		// proxy to playwright login worker
-		rest := strings.TrimPrefix(r.URL.Path, "/api/login/worker")
-		if rest == "" {
-			rest = "/"
-		}
-		target := loginWorkerBase() + rest
-		if r.URL.RawQuery != "" {
-			target += "?" + r.URL.RawQuery
-		}
-		var body io.Reader
-		if r.Body != nil && r.Method != http.MethodGet {
-			b, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-			body = bytes.NewReader(b)
-		}
-		req, err := http.NewRequest(r.Method, target, body)
-		if err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-		req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-		client := &http.Client{Timeout: 60 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			writeErr(w, 502, "login worker unreachable: "+err.Error())
-			return
-		}
-		defer resp.Body.Close()
-		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
-	})
 	mux.HandleFunc("/api/login/status", login.HandleStatus)
 	mux.HandleFunc("/api/login/logout", login.HandleLogout)
 	mux.HandleFunc("/api/login/cookies", login.HandleImportCookies)
@@ -368,6 +333,34 @@ func buildMux(s *Server, login *LoginService) *http.ServeMux {
 		return ""
 	}
 
+	// ---------- API Doc (OpenAPI + Swagger UI) ----------
+	mux.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		if p := findUI(filepath.Join("web", "openapi.json")); p != "" {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			http.ServeFile(w, r, p)
+			return
+		}
+		if p := findUI("openapi.json"); p != "" {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			http.ServeFile(w, r, p)
+			return
+		}
+		writeErr(w, http.StatusNotFound, "openapi.json not found next to binary or in web/")
+	})
+	serveDocs := func(w http.ResponseWriter, r *http.Request) {
+		if p := findUI(filepath.Join("web", "docs.html")); p != "" {
+			http.ServeFile(w, r, p)
+			return
+		}
+		if p := findUI("docs.html"); p != "" {
+			http.ServeFile(w, r, p)
+			return
+		}
+		writeErr(w, http.StatusNotFound, "docs.html not found next to binary or in web/")
+	}
+	mux.HandleFunc("/docs", serveDocs)
+	mux.HandleFunc("/docs/", serveDocs)
+
 	mux.HandleFunc("/ui/", func(w http.ResponseWriter, r *http.Request) {
 		rel := strings.TrimPrefix(r.URL.Path, "/ui/")
 		if rel == "" || rel == "index.html" {
@@ -420,13 +413,25 @@ func buildMux(s *Server, login *LoginService) *http.ServeMux {
 		writeOK(w, map[string]interface{}{
 			"service": "hunyuan3d-proxy",
 			"ui":      "place index.html + ui/ next to the binary or at D:/lose",
-			"docs":    []string{"/api/health", "/api/mode", "/api/login/status", "/api/credit/all", "/api/cloud"},
+			"docs":    []string{"/docs", "/openapi.json", "/api/health", "/api/mode", "/api/login/status", "/api/credit/all", "/api/cloud"},
 			"modes":   []string{ModeMain, ModeConcept},
 			"upstream": s.Cfg.Upstream,
 		})
 	})
 
-	return mux
+	return noStoreStatic(mux)
+}
+
+// noStoreStatic forces revalidation on non-API paths. Local UI files change
+// often; heuristic caching (Last-Modified only) lets the browser pair a fresh
+// index.html with a stale app.js, which then crashes on removed elements.
+func noStoreStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func methodGuard(method string, next http.HandlerFunc) http.HandlerFunc {

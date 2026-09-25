@@ -125,14 +125,45 @@ func truncate(s string, n int) string {
 	return s[:n] + "...(truncated)"
 }
 
+// scrubResult redacts sensitive fields (phone/token/cookie…) from an upstream
+// result before it reaches local API consumers (Web UI, logs). Preview strings
+// that cannot be parsed as JSON are dropped entirely rather than leaked.
+func scrubResult(res CreditResult) CreditResult {
+	res.Full = ""
+	switch b := res.Body.(type) {
+	case string:
+		var v interface{}
+		if err := json.Unmarshal([]byte(b), &v); err == nil {
+			res.Body = scrubSensitive(v)
+		} else if b != "" {
+			res.Body = ""
+			res.Raw = ""
+			return res
+		}
+	default:
+		res.Body = scrubSensitive(res.Body)
+	}
+	if res.Raw != "" {
+		var v interface{}
+		if err := json.Unmarshal([]byte(res.Raw), &v); err == nil {
+			if nb, err := json.Marshal(scrubSensitive(v)); err == nil {
+				res.Raw = string(nb)
+			}
+		} else {
+			res.Raw = ""
+		}
+	}
+	return res
+}
+
 // MainCredits hits BOTH main credit APIs independently.
 // Upstream verified via Playwright:
 //   POST /api/3d/quotainfo  body MUST be {"sceneType":"3dCreations"} (empty {} → HTTP 500)
 //   GET  /api/3d/planCreditInfo
 func (s *Server) MainCredits(r *http.Request) map[string]interface{} {
-	quota := s.callUpstream(r, http.MethodPost, ModeMain, "/api/3d/quotainfo",
-		[]byte(`{"sceneType":"3dCreations"}`))
-	plan := s.callUpstream(r, http.MethodGet, ModeMain, "/api/3d/planCreditInfo", nil)
+	quota := scrubResult(s.callUpstream(r, http.MethodPost, ModeMain, "/api/3d/quotainfo",
+		[]byte(`{"sceneType":"3dCreations"}`)))
+	plan := scrubResult(s.callUpstream(r, http.MethodGet, ModeMain, "/api/3d/planCreditInfo", nil))
 	// Friendly extracted numbers when quota body is the standard shape.
 	var remain, total interface{}
 	if body, ok := quota.Body.(map[string]interface{}); ok {
@@ -155,8 +186,8 @@ func (s *Server) MainCredits(r *http.Request) map[string]interface{} {
 // (bare /game3d/* is nginx 405; concept APIs are mounted under /api).
 func (s *Server) ConceptCredits(r *http.Request) map[string]interface{} {
 	body := []byte("{}")
-	rem := s.callUpstream(r, http.MethodPost, ModeConcept, "/api/game3d/general_info/get_remaining_times", body)
-	userinfo := s.callUpstream(r, http.MethodGet, ModeConcept, "/api/3d/getuserinfo", nil)
+	rem := scrubResult(s.callUpstream(r, http.MethodPost, ModeConcept, "/api/game3d/general_info/get_remaining_times", body))
+	userinfo := scrubResult(s.callUpstream(r, http.MethodGet, ModeConcept, "/api/3d/getuserinfo", nil))
 	return map[string]interface{}{
 		"backend":           "concept",
 		"independent":       true,

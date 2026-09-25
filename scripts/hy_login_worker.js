@@ -18,11 +18,10 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright-core");
 
-const EXEC =
-  process.env.PLAYWRIGHT_CHROMIUM ||
-  "C:/Users/Administrator/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe";
+// Optional override; empty → use playwright's bundled chromium.
+const EXEC = process.env.PLAYWRIGHT_CHROMIUM || "";
 const PORT = Number(process.env.LOGIN_WORKER_PORT || 8793);
-const DATA_DIR = process.env.DATA_DIR || "D:/lose/hunyuan3d-proxy/data";
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const WX_APPID = "wx01cc05677df34280";
 const QQ_APPID = "102788748";
 const UPSTREAM = "https://3d.hunyuan.tencent.com";
@@ -41,7 +40,7 @@ async function getBrowser() {
   if (browser && browser.isConnected()) return browser;
   browser = await chromium.launch({
     headless: true,
-    executablePath: EXEC,
+    ...(EXEC ? { executablePath: EXEC } : {}),
     args: ["--disable-blink-features=AutomationControlled"],
   });
   return browser;
@@ -62,32 +61,46 @@ function wxAuthorizeUrl(n, state) {
 }
 
 function qqAuthorizeUrl(n) {
-  // Keep official-site callback (QQ whitelist). nonce is included as SDK does.
-  const redirect = `${UPSTREAM}/login`;
+  // Official SPA shape: nonce/state/isMobile live INSIDE redirect_uri on /scan.
+  // Bare /login is rejected by QQ's tightened callback check (error 100010).
+  const redirect = `${UPSTREAM}/scan?nonce=${encodeURIComponent(n)}&state=qq_login&isMobile=0`;
   return (
     "https://graph.qq.com/oauth2.0/authorize?response_type=code&client_id=" +
     QQ_APPID +
     "&redirect_uri=" +
     encodeURIComponent(redirect) +
-    "&state=qq_login&nonce=" +
-    encodeURIComponent(n)
+    "&display="
   );
 }
 
 async function extractQrFromPage(page) {
-  // Prefer official QR image from WeChat domain.
-  const imgs = await page.evaluate(() =>
-    Array.from(document.images).map((i) => ({
-      src: i.src,
-      w: i.naturalWidth,
-      h: i.naturalHeight,
-      cls: i.className || "",
-    }))
-  );
-  const qr = imgs.find((i) => /open\.weixin\.qq\.com\/connect\/qrcode\//.test(i.src) && i.w >= 100);
-  if (qr) return { qrImageUrl: qr.src, qrWidth: qr.w, qrHeight: qr.h, source: "wechat-cdn" };
-  const any = imgs.find((i) => i.w >= 100 && i.h >= 100 && !/avatar|svg/i.test(i.src));
-  return any ? { qrImageUrl: any.src, qrWidth: any.w, qrHeight: any.h, source: "img" } : null;
+  // QR images live inside third-party iframes (WeChat widget / QQ ptlogin2),
+  // so scan every frame, not just the main document.
+  const found = [];
+  for (const fr of page.frames()) {
+    let imgs = [];
+    try {
+      imgs = await fr.evaluate(() =>
+        Array.from(document.images).map((i) => ({
+          src: i.src,
+          w: i.naturalWidth,
+          h: i.naturalHeight,
+          cls: i.className || "",
+        }))
+      );
+    } catch (_) {
+      continue;
+    }
+    found.push(...imgs);
+  }
+  // WeChat official QR CDN first, then QQ ptqrshow (skip ptlogin spinners/gifs).
+  let hit = found.find((i) => /open\.weixin\.qq\.com\/connect\/qrcode\//.test(i.src) && i.w >= 100);
+  if (hit) return { qrImageUrl: hit.src, qrWidth: hit.w, qrHeight: hit.h, source: "wechat-cdn" };
+  hit = found.find((i) => /ptqrshow/i.test(i.src));
+  if (!hit) hit = found.find((i) => /ptlogin2\.qq\.com/i.test(i.src) && !/\.gif/i.test(i.src) && i.w >= 80);
+  if (hit) return { qrImageUrl: hit.src, qrWidth: hit.w || 200, qrHeight: hit.h || 200, source: "qq-ptqrshow" };
+  hit = found.find((i) => i.w >= 100 && i.h >= 100 && !/avatar|svg|\.gif/i.test(i.src));
+  return hit ? { qrImageUrl: hit.src, qrWidth: hit.w, qrHeight: hit.h, source: "img" } : null;
 }
 
 async function startSession(provider) {
@@ -130,8 +143,12 @@ async function startSession(provider) {
       } else {
         sess.status = "waiting_scan";
       }
-      // try extract any QR-ish image
-      const info = await extractQrFromPage(page);
+      // try extract QR image (ptlogin iframe may render late)
+      let info = null;
+      for (let i = 0; i < 4 && !info; i++) {
+        info = await extractQrFromPage(page);
+        if (!info) await page.waitForTimeout(2000);
+      }
       if (info) Object.assign(sess, info);
     } else {
       // Open official login page and let the site build the legal WxLogin iframe.

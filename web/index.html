@@ -19,12 +19,7 @@
       </div>
     </div>
     <div class="top-actions">
-      <label class="field inline">
-        <span>Proxy</span>
-        <input id="baseUrl" type="text" value="" spellcheck="false" />
-      </label>
-      <button id="btnHealth" class="btn primary">检测连接</button>
-      <span id="healthBadge" class="badge">未检测</span>
+      <span id="healthBadge" class="badge">连接中…</span>
     </div>
   </header>
 
@@ -47,7 +42,8 @@
       </div>
       <div id="oauthBanner" class="oauth-banner" hidden></div>
       <div class="docs-row">
-        <span>官方文档：</span>
+        <span>文档：</span>
+        <a href="/docs">API 文档 /docs</a>
         <a href="https://cloud.tencent.com/document/product/1804/120829" target="_blank" rel="noreferrer">简介 120829</a>
         <a href="https://cloud.tencent.com/document/product/1804/120838" target="_blank" rel="noreferrer">API 概览</a>
         <a href="https://cloud.tencent.com/document/api/1804/123447" target="_blank" rel="noreferrer">SubmitPro</a>
@@ -59,7 +55,7 @@
         <h2>登录</h2>
         <div class="row gap">
           <button id="btnQRStart" class="btn primary">微信扫码</button>
-          <button id="btnQQStart" class="btn">QQ 授权</button>
+          <button id="btnQQStart" class="btn">QQ（Cookie 导入）</button>
           <button id="btnQRPoll" class="btn">刷新状态</button>
           <button id="btnLogout" class="btn danger">登出</button>
         </div>
@@ -178,33 +174,7 @@
       <div id="assetFooter" class="asset-credits hint"></div>
     </section>
 
-    <section class="card span-7">
-      <div class="card-head">
-        <h2>功能端点</h2>
-        <div class="mode-switch" id="apiModeSwitch">
-          <button data-apiscope="main" class="chip active">main</button>
-          <button data-apiscope="concept" class="chip">concept</button>
-          <button data-apiscope="cloud" class="chip">cloud</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <label class="field" style="width:110px"><span>Method</span>
-          <select id="apiMethod"><option>GET</option><option selected>POST</option></select>
-        </label>
-        <label class="field grow"><span>Path</span>
-          <input id="apiPath" list="apiPaths" spellcheck="false" />
-          <datalist id="apiPaths"></datalist>
-        </label>
-        <button id="btnSend" class="btn primary">发送</button>
-      </div>
-      <div class="preset-row" id="presetRow"></div>
-      <label class="field"><span>JSON Body</span>
-        <textarea id="apiBody" rows="7" spellcheck="false">{}</textarea>
-      </label>
-      <pre id="apiOut" class="out tall">—</pre>
-    </section>
-
-    <section class="card span-5">
+    <section class="card span-12">
       <div class="card-head">
         <h2>日志 / 签名</h2>
         <div class="row gap">
