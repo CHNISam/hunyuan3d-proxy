@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>混元3D 反代控制台</title>
+  <link rel="stylesheet" href="ui/app.css" />
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+  <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">HY</div>
+      <div>
+        <h1>混元3D 反代控制台</h1>
+        <p class="sub">真实二维码 · OAuth 回调 · 微信/QQ/邮箱 · 双端点积分</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <label class="field inline">
+        <span>Proxy</span>
+        <input id="baseUrl" type="text" value="" spellcheck="false" />
+      </label>
+      <button id="btnHealth" class="btn primary">检测连接</button>
+      <span id="healthBadge" class="badge">未检测</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card span-12">
+      <div class="card-head">
+        <h2>服务状态 / 模式</h2>
+        <div class="mode-switch" id="modeSwitch">
+          <button data-mode="main" class="chip active">main 主站</button>
+          <button data-mode="concept" class="chip">concept 概念站</button>
+        </div>
+      </div>
+      <div class="grid-3" id="healthGrid">
+        <div class="stat"><span>状态</span><strong id="statStatus">—</strong></div>
+        <div class="stat"><span>上游</span><strong id="statUpstream">—</strong></div>
+        <div class="stat"><span>模式</span><strong id="statMode">—</strong></div>
+        <div class="stat"><span>Cookie</span><strong id="statCookies">—</strong></div>
+        <div class="stat"><span>会话</span><strong id="statSession">—</strong></div>
+        <div class="stat"><span>签名键</span><strong id="statSignKey" class="mono">—</strong></div>
+      </div>
+      <div id="oauthBanner" class="oauth-banner" hidden></div>
+      <div class="docs-row">
+        <span>官方文档：</span>
+        <a href="https://cloud.tencent.com/document/product/1804/120829" target="_blank" rel="noreferrer">简介 120829</a>
+        <a href="https://cloud.tencent.com/document/product/1804/120838" target="_blank" rel="noreferrer">API 概览</a>
+        <a href="https://cloud.tencent.com/document/api/1804/123447" target="_blank" rel="noreferrer">SubmitPro</a>
+      </div>
+    </section>
+
+    <section class="card span-7">
+      <div class="card-head">
+        <h2>登录</h2>
+        <div class="row gap">
+          <button id="btnQRStart" class="btn primary">微信扫码</button>
+          <button id="btnQQStart" class="btn">QQ 授权</button>
+          <button id="btnQRPoll" class="btn">刷新状态</button>
+          <button id="btnLogout" class="btn danger">登出</button>
+        </div>
+      </div>
+
+      <div class="login-status">
+        <div class="stat"><span>登录</span><strong id="lgIn">—</strong></div>
+        <div class="stat"><span>hy_user</span><strong id="lgUser">—</strong></div>
+        <div class="stat"><span>hy_token</span><strong id="lgToken">—</strong></div>
+        <div class="stat"><span>innerUserId</span><strong id="lgUid" class="mono">—</strong></div>
+      </div>
+
+      <div class="qr-box">
+        <div class="qr-canvas-wrap" id="qrCanvasWrap">
+          <img id="qrImg" alt="登录二维码" hidden />
+          <canvas id="qrCanvas" width="200" height="200"></canvas>
+          <p class="hint" id="qrCaption">点击「微信扫码」生成二维码</p>
+        </div>
+        <div class="qr-meta">
+          <div><span class="label">provider</span><code id="qrProvider">—</code></div>
+          <div><span class="label">ticket</span><code id="qrTicket">—</code></div>
+          <div><span class="label">status</span><code id="qrStatus">—</code></div>
+          <div><span class="label">callback（登录后跳回这里）</span><code id="qrCallback">—</code></div>
+          <div class="full"><span class="label">授权 URL（也可手动打开）</span>
+            <a id="qrUrl" href="#" target="_blank" rel="noreferrer" class="wrap">—</a>
+          </div>
+          <div class="full hint" id="qrMessage">OAuth 成功后会 302 到本地 callback，页面自动刷新登录状态。</div>
+        </div>
+      </div>
+
+      <div class="tabs" id="loginTabs">
+        <button data-tab="cookie" class="chip active">Cookie 导入</button>
+        <button data-tab="email" class="chip">邮箱验证码</button>
+        <button data-tab="phone" class="chip">手机验证码</button>
+      </div>
+
+      <div id="tab-cookie" class="tab-panel">
+        <div class="form-row">
+          <label class="field grow"><span>hy_user</span><input id="ckUser" placeholder="hy_user" /></label>
+          <label class="field grow"><span>hy_token</span><input id="ckToken" placeholder="hy_token" /></label>
+          <button id="btnImport" class="btn primary">导入 Cookie</button>
+        </div>
+        <label class="field"><span>原始 Cookie 头（可选）</span>
+          <input id="ckRaw" placeholder="hy_user=...; hy_token=..." />
+        </label>
+      </div>
+
+      <div id="tab-email" class="tab-panel" hidden>
+        <div class="form-row">
+          <label class="field grow"><span>邮箱</span><input id="emailInput" type="email" placeholder="you@example.com" /></label>
+          <button id="btnEmailCode" class="btn">发送验证码</button>
+        </div>
+        <div class="form-row">
+          <label class="field grow"><span>验证码</span><input id="emailCode" placeholder="邮箱验证码" /></label>
+          <button id="btnEmailVerify" class="btn primary">邮箱登录</button>
+        </div>
+        <p class="hint">会依次探测上游邮箱登录接口（路径由登录页动态注入，可能需 Cookie 回退）。</p>
+      </div>
+
+      <div id="tab-phone" class="tab-panel" hidden>
+        <div class="form-row">
+          <label class="field grow"><span>手机号</span><input id="phoneInput" placeholder="13800138000" /></label>
+          <button id="btnPhoneCode" class="btn">发送短信码</button>
+        </div>
+        <div class="form-row">
+          <label class="field grow"><span>验证码</span><input id="phoneCode" placeholder="短信验证码" /></label>
+          <button id="btnPhoneVerify" class="btn primary">手机登录</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card span-5">
+      <div class="card-head">
+        <h2>积分（两端独立）</h2>
+        <button id="btnCreditAll" class="btn primary">全部查询</button>
+      </div>
+      <div class="credit-pair">
+        <div class="credit-panel">
+          <div class="credit-title">main</div>
+          <p class="hint">quotainfo + planCreditInfo</p>
+          <button id="btnCreditMain" class="btn small">查询</button>
+          <pre id="outCreditMain" class="out">—</pre>
+        </div>
+        <div class="credit-panel">
+          <div class="credit-title">concept</div>
+          <p class="hint">get_remaining_times</p>
+          <button id="btnCreditConcept" class="btn small">查询</button>
+          <pre id="outCreditConcept" class="out">—</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="card span-12" id="assetBoardSection">
+      <div class="card-head">
+        <h2>资源看板 · 生成中间产物</h2>
+        <div class="row gap">
+          <div class="mode-switch" id="assetSourceSwitch">
+            <button data-src="all" class="chip active">全部</button>
+            <button data-src="main" class="chip">main</button>
+            <button data-src="concept" class="chip">concept</button>
+          </div>
+          <div class="mode-switch" id="assetStatusSwitch">
+            <button data-st="all" class="chip active">全部状态</button>
+            <button data-st="processing" class="chip">进行中</button>
+            <button data-st="success" class="chip">已完成</button>
+          </div>
+          <button id="btnRefreshAssets" class="btn primary">刷新</button>
+          <button id="btnLoadMoreAssets" class="btn">加载更多历史</button>
+          <label class="check"><input type="checkbox" id="assetAuto" /> 自动 8s</label>
+        </div>
+      </div>
+      <div id="assetCredits" class="asset-credits hint"></div>
+      <div id="assetGrid" class="asset-grid">
+        <div class="hint">点击「刷新」加载生成任务与中间产物（含历史）…</div>
+      </div>
+      <div id="assetFooter" class="asset-credits hint"></div>
+    </section>
+
+    <section class="card span-7">
+      <div class="card-head">
+        <h2>功能端点</h2>
+        <div class="mode-switch" id="apiModeSwitch">
+          <button data-apiscope="main" class="chip active">main</button>
+          <button data-apiscope="concept" class="chip">concept</button>
+          <button data-apiscope="cloud" class="chip">cloud</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="field" style="width:110px"><span>Method</span>
+          <select id="apiMethod"><option>GET</option><option selected>POST</option></select>
+        </label>
+        <label class="field grow"><span>Path</span>
+          <input id="apiPath" list="apiPaths" spellcheck="false" />
+          <datalist id="apiPaths"></datalist>
+        </label>
+        <button id="btnSend" class="btn primary">发送</button>
+      </div>
+      <div class="preset-row" id="presetRow"></div>
+      <label class="field"><span>JSON Body</span>
+        <textarea id="apiBody" rows="7" spellcheck="false">{}</textarea>
+      </label>
+      <pre id="apiOut" class="out tall">—</pre>
+    </section>
+
+    <section class="card span-5">
+      <div class="card-head">
+        <h2>日志 / 签名</h2>
+        <div class="row gap">
+          <button id="btnSign" class="btn">签名</button>
+          <button id="btnClearLog" class="btn small">清日志</button>
+        </div>
+      </div>
+      <pre id="signOut" class="out">—</pre>
+      <pre id="logOut" class="out tall">—</pre>
+    </section>
+  </main>
+
+  <footer class="footer">
+    Web UI · 本地 OAuth 回调 <code>/api/login/oauth/callback</code> ·
+    官方文档 <a href="https://cloud.tencent.com/document/product/1804/120829" target="_blank" rel="noreferrer">120829</a>
+  </footer>
+
+  <script src="ui/qr.js"></script>
+  <script src="ui/app.js"></script>
+</body>
+</html>

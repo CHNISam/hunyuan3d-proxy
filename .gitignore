@@ -1,0 +1,9 @@
+# 登录会话与敏感数据（勿提交仓库）
+data/*
+!data/.gitkeep
+
+# 本地日志
+*.log
+
+# 本地构建产物
+hunyuan3d-proxy-linux
