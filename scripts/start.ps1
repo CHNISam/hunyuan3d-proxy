@@ -10,11 +10,6 @@ $env:UPSTREAM = if ($env:UPSTREAM) { $env:UPSTREAM } else { "https://3d.hunyuan.
 
 New-Item -ItemType Directory -Force -Path $env:DATA_DIR | Out-Null
 
-$exe = Join-Path $proj "hunyuan3d-proxy.exe"
-if (-not (Test-Path $exe)) {
-  $exe = Get-ChildItem (Join-Path $proj "bin\*.exe") | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
-}
-
-Write-Host "Starting $exe on port $env:PORT"
+Write-Host "Starting go run . on port $env:PORT"
 Write-Host "UI: http://127.0.0.1:$env:PORT/"
-& $exe
+go run .

@@ -58,7 +58,7 @@ const mcpRemovedNotice = `error: the "-mcp" (stdio) mode has been removed.
 
 MCP is now served over HTTP by the normal server:
 
-  1) start the server:  ./hunyuan3d-proxy-linux
+  1) start the server:  go run .   (or a binary from GitHub Releases)
   2) MCP endpoint:      POST http://127.0.0.1:<PORT>/mcp   (Streamable HTTP)
 
 Client config example:

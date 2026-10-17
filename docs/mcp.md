@@ -27,7 +27,7 @@
 这两种情况下**务必**同时设置 `MCP_HTTP_TOKEN`：
 
 ```sh
-HOST=0.0.0.0 MCP_HTTP_TOKEN=$(openssl rand -hex 16) ./hunyuan3d-proxy-linux
+HOST=0.0.0.0 MCP_HTTP_TOKEN=$(openssl rand -hex 16) go run .
 ```
 
 服务启动时若检测到绑定在非 loopback 地址，会在日志里打印告警；未开令牌时告警会明确指出"任何人都能消耗积分"。
@@ -45,7 +45,7 @@ Web 控制台里有 **MCP 服务**面板：连接状态、端点、令牌（默�
 MCP 与 HTTP 服务同生共死，无需额外启动：
 
 ```sh
-PORT=8812 DATA_DIR="$PWD/data" ./hunyuan3d-proxy-linux
+PORT=8812 DATA_DIR="$PWD/data" go run .
 # MCP 端点即 http://127.0.0.1:8812/mcp
 ```
 

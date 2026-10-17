@@ -1,0 +1,102 @@
+# 打 tag（v*）即自动构建全平台二进制并创建 GitHub Release。
+# 也可在 Actions 页面手动 dispatch：只跑测试 + 构建（产物存为 artifact），不发 Release。
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# gh release create 需要写权限；其余步骤只读
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: gofmt check
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "需要 gofmt -w 的文件："
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go test (离线)
+        run: go test ./...
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-amd64,   goos: linux,   goarch: amd64, ext: '' }
+          - { target: linux-arm64,   goos: linux,   goarch: arm64, ext: '' }
+          - { target: windows-amd64, goos: windows, goarch: amd64, ext: '.exe' }
+          - { target: windows-arm64, goos: windows, goarch: arm64, ext: '.exe' }
+          - { target: darwin-amd64,  goos: darwin,  goarch: amd64, ext: '' }
+          - { target: darwin-arm64,  goos: darwin,  goarch: arm64, ext: '' }
+    env:
+      # 纯 Go 标准库实现，无 cgo —— 可以放心交叉编译
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          name="hunyuan3d-proxy-${{ matrix.target }}${{ matrix.ext }}"
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w" -o "dist/$name" .
+          ( cd dist && sha256sum "$name" > "$name.sha256" )
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hunyuan3d-proxy-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -lh dist
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag

@@ -8,4 +8,6 @@ data/*
 # 本地构建产物（go build 输出）
 hunyuan3d-proxy-linux
 hunyuan3d-proxy
+hunyuan3d-proxy.exe
+dist/
 

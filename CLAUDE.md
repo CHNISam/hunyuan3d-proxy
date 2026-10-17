@@ -6,11 +6,12 @@
 
 ## 命令
 
-- 构建：`go build -o hunyuan3d-proxy-linux .`
+- 运行：`go run .`（环境变量 `PORT` / `DATA_DIR` / `UPSTREAM`），或 `./scripts/start.sh`
+- 构建：`go build -o hunyuan3d-proxy .`；**构建产物不提交仓库**（.gitignore 已覆盖 .exe / dist/）
 - 测试：`go test ./...`（离线可跑，不访问上游）
 - 格式化：`gofmt -w .`
-- 运行：`./scripts/start.sh`，或
-  `PORT=8812 DATA_DIR="$PWD/data" UPSTREAM="https://3d.hunyuan.tencent.com" ./hunyuan3d-proxy-linux`
+- 发布：打 tag 即触发 `.github/workflows/release.yml`（矩阵构建 win/linux/macOS × amd64/arm64 → 自动发 Release）：
+  `git tag v0.1.0 && git push origin v0.1.0`
 - MCP：随 HTTP 服务自动启用，端点 `POST /mcp`（Streamable HTTP，见 `docs/mcp.md`）
 
 ## 约定

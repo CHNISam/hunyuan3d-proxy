@@ -3,7 +3,7 @@
 > ⚠️ **本项目仅用于学习用途**，请遵守腾讯服务条款，勿用于商业用途。
 项目已在linux.do公开声明https://linux.do/
 本目录是 **腾讯混元3D 反代服务器** 的完整集合（源码 / UI / 文档 / 脚本 / 数据）。
-**纯 Go 项目**：运行、测试只需 Go 工具链，不需要 Node / Bun / Playwright。
+**纯 Go 项目**：运行、测试只需 Go 工具链（1.22+），不需要 Node / Bun / Playwright。
 （`web/ui/*.js` 是浏览器里跑的控制台前端，不参与构建。）
 
 ```
@@ -14,9 +14,7 @@ hunyuan3d-proxy/
 ├── mcp.go, mcp_tools.go     # 内置 MCP server（HTTP，纯标准库）
 ├── mcp_http.go, mcp_test.go, mcp_http_test.go
 ├── go.mod
-├── hunyuan3d-proxy.exe      # Windows 主程序（与 bin/ 中最新构建一致）
-├── hunyuan3d-proxy-linux    # Linux 构建产物（go build 生成，已 gitignore）
-├── bin/                     # 历史/最新 exe
+├── .github/workflows/release.yml  # 打 tag → 矩阵构建 → 自动发 Release
 ├── web/
 │   ├── index.html           # Web 控制台入口
 │   ├── docs.html, openapi.json
@@ -29,53 +27,60 @@ hunyuan3d-proxy/
 │   └── ...
 ├── scripts/
 │   ├── start.bat / start.ps1  # Windows 启动
-│   └── start.sh               # Linux 启动（自动构建）
+│   └── start.sh               # Linux / macOS 启动
 ├── data/
 │   └── cookies.json         # 登录会话（勿提交仓库）
 └── README.md
 ```
 
-## 快速启动
+## 快速启动（用 Go 运行）
 
-Linux / macOS：
+不需要预先编译，也不需要下载二进制，`go run .` 直接跑：
 
 ```sh
-./scripts/start.sh          # 自动 go build 后启动，默认 8812
-# 或手动：
-PORT=8812 DATA_DIR="$PWD/data" UPSTREAM="https://3d.hunyuan.tencent.com" \
-  ./hunyuan3d-proxy-linux
+# 仓库根目录
+PORT=8812 DATA_DIR="$PWD/data" UPSTREAM="https://3d.hunyuan.tencent.com" go run .
 ```
 
 Windows PowerShell：
 
 ```powershell
-cd D:\lose\hunyuan3d-proxy
-
+cd <仓库目录>
 $env:PORT = "8812"
-$env:DATA_DIR = "D:\lose\hunyuan3d-proxy\data"
+$env:DATA_DIR = "$PWD\data"
 $env:UPSTREAM = "https://3d.hunyuan.tencent.com"
-.\hunyuan3d-proxy.exe
+go run .
 ```
 
-或：`.\scripts\start.ps1`
+或用启动脚本（只是设好上面几个环境变量后执行 `go run .`）：
+
+- Linux / macOS：`./scripts/start.sh`
+- Windows：`.\scripts\start.ps1` 或 `.\scripts\start.bat`
 
 浏览器打开：`http://127.0.0.1:8812/`
-
 API 文档（Swagger UI）：`http://127.0.0.1:8812/docs` · 规范：`/openapi.json`
 
-## 编译
+不想装 Go？从 [Releases](https://github.com/montezl/hunyuan3d-proxy/releases) 下载对应平台的
+`hunyuan3d-proxy-<系统>-<架构>` 直接运行即可（每个文件附带 `.sha256`）。
+
+## 编译与发布
+
+本地构建（可选，`go run .` 已够用）：
 
 ```sh
-go build -o hunyuan3d-proxy-linux .        # 当前平台
+go build -o hunyuan3d-proxy .                       # 当前平台
+GOOS=windows GOARCH=amd64 go build -o hunyuan3d-proxy.exe .   # 交叉编译（纯 Go，无 cgo）
 ```
 
-Windows：
+发布：打 tag 并推送，`.github/workflows/release.yml` 会自动矩阵构建
+linux / windows / macOS × amd64 / arm64 六个目标，并创建 GitHub Release（含 sha256）：
 
-```powershell
-$env:GOROOT = "D:\lose\.tools\go"
-& "D:\lose\.tools\go\bin\go.exe" build -o hunyuan3d-proxy.exe .
-Copy-Item hunyuan3d-proxy.exe bin\ -Force
+```sh
+git tag v0.1.0 && git push origin v0.1.0
 ```
+
+也可以在 Actions 页面手动 `workflow_dispatch`：只跑测试与构建并留存 artifact，不发 Release。
+构建产物不提交仓库（`.gitignore` 已覆盖 `*.exe`、`dist/`）。
 
 ## 测试（仅需 Go）
 
