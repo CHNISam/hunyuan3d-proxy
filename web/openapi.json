@@ -73,7 +73,7 @@
         "tags": ["登录"],
         "summary": "启动扫码登录",
         "operationId": "qrStart",
-        "description": "返回微信 WxLogin 授权 URL 与 ticket；配合 Playwright worker 可得真实二维码。",
+        "description": "返回微信 WxLogin 授权 URL 与 ticket；服务端纯协议生成二维码，无需浏览器。",
         "responses": {
           "200": { "description": "授权链接与 ticket", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Envelope" } } } }
         }

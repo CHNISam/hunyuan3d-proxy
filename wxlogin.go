@@ -21,15 +21,15 @@ import (
 const wxAppID = "wx01cc05677df34280"
 
 type wxQRSession struct {
-	ID         string
-	QR         []byte
-	uuid       string
-	redirect   string
-	status     string // pending | scanned | expired | success | failed
-	message    string
-	code       string
-	expireHit  int
-	created    time.Time
+	ID        string
+	QR        []byte
+	uuid      string
+	redirect  string
+	status    string // pending | scanned | expired | success | failed
+	message   string
+	code      string
+	expireHit int
+	created   time.Time
 }
 
 var (

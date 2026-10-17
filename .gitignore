@@ -5,8 +5,7 @@ data/*
 # 本地日志
 *.log
 
-# 本地构建产物
+# 本地构建产物（go build 输出）
 hunyuan3d-proxy-linux
+hunyuan3d-proxy
 
-# Node/Bun 测试依赖
-node_modules/

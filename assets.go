@@ -6,9 +6,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type AssetItem struct {
@@ -28,6 +30,12 @@ type AssetItem struct {
 	PrimaryModel string            `json:"primaryModelUrl,omitempty"`
 	Assets       map[string]string `json:"assets"` // flattened url map
 	Notes        []string          `json:"notes,omitempty"`
+	// UpstreamRequest is the API path the task was submitted to
+	// (e.g. /api/game3d/texture_painting/texture_edit_local).
+	UpstreamRequest string `json:"upstreamRequest,omitempty"`
+	// ModelChain is the upstream model pipeline string; it is what actually
+	// reveals which stages ran (e.g. "...texture-edit-text-v1.0...").
+	ModelChain string `json:"modelChain,omitempty"`
 }
 
 // HandleAssetBoard GET /api/text3d/assets
@@ -85,6 +93,13 @@ func (s *Server) HandleAssetBoard(w http.ResponseWriter, r *http.Request) {
 	// sort newest first when timestamps present
 	sortAssetsByTime(items)
 
+	// "limit" is the size of the page the caller asked for, not a per-source
+	// quota: merging two sources must not return 2× the requested rows, and a
+	// freshly created task must not be pushed off the first page by older ones.
+	if len(items) > limit {
+		items = items[:limit]
+	}
+
 	writeOK(w, map[string]interface{}{
 		"source":       src,
 		"statusFilter": statusFilter,
@@ -97,10 +112,18 @@ func (s *Server) HandleAssetBoard(w http.ResponseWriter, r *http.Request) {
 			"main":    s.MainCredits(r),
 			"concept": s.ConceptCredits(r),
 		},
+		// The board's own routes plus the upstream endpoints a task can come
+		// from. Kept here (not hardcoded in the UI) so a new pipeline stage has
+		// one place to register its path.
 		"endpoints": map[string]string{
-			"mainList":    "POST /api/3d/creations/list",
-			"conceptList": "POST /game3d/general_info/get_works_list",
-			"board":       "GET /api/text3d/assets?source=&limit=&offset=&status=",
+			"board":         "GET /api/text3d/assets?source=&limit=&offset=&status=",
+			"mainList":      "POST /api/3d/creations/list",
+			"conceptList":   "POST /game3d/general_info/get_works_list",
+			"geometry":      "POST /api/game3d/geometry_generation/text2geometry",
+			"textureImage":  "POST /api/game3d/texture_painting/image2texture_v31",
+			"textureText":   "POST /api/game3d/texture_painting/texture_edit_local (editType=1)",
+			"textureViews":  "POST /api/game3d/texture_painting/views2texture",
+			"textureBroken": "POST /api/game3d/texture_painting/text2texture_v31 (勿用：texture-preprocess 必失败)",
 		},
 		"hint": "历史会随 offset 翻页；UI 本地也会合并保留已见过的任务",
 	})
@@ -119,11 +142,30 @@ func sortAssetsByTime(items []AssetItem) {
 			if f, err := parseFloat(t); err == nil {
 				return f
 			}
+			// concept returns ISO-8601 (e.g. "2026-10-16T16:23:40.736Z") while
+			// main returns Unix seconds. Without this the ISO values all scored
+			// 0 and every concept task sorted behind every main task, so a
+			// freshly generated concept model never appeared on the first page.
+			if ts, err := parseAssetTime(t); err == nil {
+				return ts
+			}
 		}
 		// try raw json number string via asString
 		if s := asString(it.CreatedAt); s != "" {
 			if f, err := parseFloat(s); err == nil {
 				return f
+			}
+			if ts, err := parseAssetTime(s); err == nil {
+				return ts
+			}
+		}
+		// Fall back to UpdatedAt for the same two formats.
+		if it.UpdatedAt != nil && it.UpdatedAt != it.CreatedAt {
+			switch t := it.UpdatedAt.(type) {
+			case string:
+				if ts, err := parseAssetTime(t); err == nil {
+					return ts
+				}
 			}
 		}
 		return 0
@@ -181,6 +223,12 @@ func (s *Server) collectMainAssets(limit, offset int) ([]AssetItem, int) {
 			CreatedAt: c["createdAt"],
 			UpdatedAt: c["updatedAt"],
 			Pipeline:  c["sceneType"],
+			// main items do not echo a request path; name the endpoint they
+			// came from so the board can show one for every source.
+			UpstreamRequest: asString(c["reqPath"]),
+		}
+		if item.UpstreamRequest == "" {
+			item.UpstreamRequest = "/api/3d/creations/list"
 		}
 		if arr, ok := c["result"].([]interface{}); ok && len(arr) > 0 {
 			var chosen map[string]interface{}
@@ -262,6 +310,9 @@ func (s *Server) collectConceptAssets(limit int) ([]AssetItem, int) {
 			CreatedAt: w["createdAt"],
 			UpdatedAt: w["updatedAt"],
 			Notes:     []string{},
+
+			UpstreamRequest: asString(w["reqPath"]),
+			ModelChain:      asString(w["model"]),
 		}
 		if p := asString(w["reqPath"]); p != "" {
 			item.Notes = append(item.Notes, p)
@@ -471,4 +522,26 @@ func pipelineStatusName(ps, st interface{}) string {
 		return s
 	}
 	return "unknown"
+}
+
+// parseAssetTime parses the timestamp formats the two upstreams use and
+// returns Unix seconds. Concept returns ISO-8601; main returns Unix seconds.
+func parseAssetTime(v string) (float64, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, errors.New("empty time")
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05.999999999Z",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return float64(t.Unix()), nil
+		}
+	}
+	return 0, errors.New("unrecognised time: " + v)
 }

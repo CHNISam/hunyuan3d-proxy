@@ -19,6 +19,8 @@
       </div>
     </div>
     <div class="top-actions">
+      <span id="topCreditMain" class="badge credit" title="主站积分 remainQuota">main —</span>
+      <span id="topCreditConcept" class="badge credit" title="概念站积分 remainingTimes">concept —</span>
       <span id="healthBadge" class="badge">连接中…</span>
     </div>
   </header>
@@ -129,22 +131,82 @@
 
     <section class="card span-5">
       <div class="card-head">
-        <h2>积分（两端独立）</h2>
-        <button id="btnCreditAll" class="btn primary">全部查询</button>
+        <h2>日志 / 签名</h2>
+        <div class="row gap">
+          <button id="btnSign" class="btn">签名</button>
+          <button id="btnClearLog" class="btn small">清日志</button>
+        </div>
       </div>
-      <div class="credit-pair">
-        <div class="credit-panel">
-          <div class="credit-title">main</div>
-          <p class="hint">quotainfo + planCreditInfo</p>
-          <button id="btnCreditMain" class="btn small">查询</button>
-          <pre id="outCreditMain" class="out">—</pre>
+      <pre id="signOut" class="out">—</pre>
+      <pre id="logOut" class="out tall">—</pre>
+    </section>
+
+    <section class="card span-12" id="mcpSection">
+      <div class="card-head">
+        <h2>MCP 服务 · 供 LLM 客户端调用</h2>
+        <div class="row gap">
+          <span class="badge" id="mcpStatusBadge" data-status="disconnected">未连接</span>
+          <button id="btnMcpRefresh" class="btn small">刷新</button>
+          <button id="btnMcpCopyConfig" class="btn small">复制调用示例</button>
+          <button id="btnMcpCopyCurl" class="btn small">复制调用示例</button>
         </div>
-        <div class="credit-panel">
-          <div class="credit-title">concept</div>
-          <p class="hint">get_remaining_times</p>
-          <button id="btnCreditConcept" class="btn small">查询</button>
-          <pre id="outCreditConcept" class="out">—</pre>
+      </div>
+
+      <div class="grid-3" id="mcpMeta">
+        <div class="stat"><span>传输</span><strong id="mcpTransport">—</strong></div>
+        <div class="stat"><span>协议版本</span><strong id="mcpProtocol">—</strong></div>
+        <div class="stat"><span>端点</span><strong id="mcpEndpoint" class="mono">—</strong></div>
+        <div class="stat"><span>工具数</span><strong id="mcpToolCount">—</strong></div>
+        <div class="stat"><span>调用次数</span><strong id="mcpCalls">—</strong></div>
+        <div class="stat"><span>最近调用</span><strong id="mcpLast">—</strong></div>
+      </div>
+
+      <div class="mcp-token-row" id="mcpTokenRow" hidden>
+        <span class="label">访问令牌</span>
+        <code id="mcpToken" class="mono" title="点击显示/隐藏">••••••••••••••••</code>
+        <button id="btnMcpToggleToken" class="btn small">显示</button>
+        <span class="hint">由环境变量 <code>MCP_HTTP_TOKEN</code> 设置；请求需带 <code>Authorization: Bearer &lt;token&gt;</code>。</span>
+      </div>
+
+      <div class="mcp-token-row" id="mcpNoAuthRow" hidden>
+        <span class="label">鉴权</span>
+        <span class="badge">未启用</span>
+        <span class="hint">默认不校验令牌：任何能访问 <code>/mcp</code> 的程序都可直接调用工具。
+          若要启用，设置环境变量 <code>MCP_HTTP_TOKEN=你的令牌</code> 后重启。</span>
+      </div>
+
+      <div id="mcpWarning" class="mcp-warning" hidden></div>
+      <div id="mcpError" class="mcp-error" hidden></div>
+      <div id="mcpRejected" class="mcp-rejected" hidden></div>
+
+      <div class="tabs" id="mcpTabs">
+        <button data-tab="tools" class="chip active">工具（<span id="mcpTabCount">0</span>）</button>
+        <button data-tab="connect" class="chip">接入方式</button>
+      </div>
+
+      <div id="tab-mcp-tools" class="tab-panel">
+        <div class="mcp-tool-bar">
+          <label class="check"><input type="checkbox" id="mcpOnlyCredit" /> 只看消耗积分</label>
+          <span class="hint" id="mcpToolHint">工具由服务端 /api/mcp/panel 提供</span>
         </div>
+        <div id="mcpToolList" class="mcp-tool-list" data-testid="tools-screen" data-tool-count="0" data-call-status="idle">
+          <div class="hint">加载中…</div>
+        </div>
+      </div>
+
+      <div id="tab-mcp-connect" class="tab-panel" hidden>
+        <div class="grid-2">
+          <div>
+            <div class="mcp-sub">端点与请求格式</div>
+            <pre class="mcp-code" id="mcpCfgHttp">—</pre>
+          </div>
+          <div>
+            <div class="mcp-sub">工具清单（JSON，供客户端导入）</div>
+            <pre class="mcp-code" id="mcpCfgTools">—</pre>
+          </div>
+        </div>
+        <div class="mcp-sub">手工验证（curl）</div>
+        <pre class="mcp-code" id="mcpCfgCurl">—</pre>
       </div>
     </section>
 
@@ -172,18 +234,6 @@
         <div class="hint">点击「刷新」加载生成任务与中间产物（含历史）…</div>
       </div>
       <div id="assetFooter" class="asset-credits hint"></div>
-    </section>
-
-    <section class="card span-12">
-      <div class="card-head">
-        <h2>日志 / 签名</h2>
-        <div class="row gap">
-          <button id="btnSign" class="btn">签名</button>
-          <button id="btnClearLog" class="btn small">清日志</button>
-        </div>
-      </div>
-      <pre id="signOut" class="out">—</pre>
-      <pre id="logOut" class="out tall">—</pre>
     </section>
   </main>
 

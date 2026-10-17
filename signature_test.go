@@ -1,9 +1,9 @@
 package main
 
 import (
-	"encoding/hex"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 )
 

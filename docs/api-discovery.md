@@ -481,6 +481,7 @@ else if in PROD lists → "online"
 - Prefer capturing a real browser session (cookies `hy_*` + server session) via Playwright login once, then replay Cookie header in Go.
 - QR = WeChat official widget; no first-party poll API to call from Go alone.
 - Phone/email endpoints remain **unknown pathnames** — next step: download the `/login` route chunk from the main SPA (search lazy `import("./index-*.js")` near route `LOGIN` / `login-email`).
+- **2026-09 更新（当前实现）**：登录已改为**纯协议**直登，不再需要 Playwright —— 见 `login_qr.go`（qrconnect 轮询 + 自绘二维码）、`wxlogin.go`、`login.go`。项目内的 Playwright worker、测试脚本与 Node 依赖已移除，本文件其余内容仅作逆向过程存档。
 
 ### Chunks worth downloading next
 

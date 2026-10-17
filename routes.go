@@ -22,16 +22,16 @@ func buildMux(s *Server, login *LoginService) http.Handler {
 	// ---------- meta ----------
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, map[string]interface{}{
-			"service":      "hunyuan3d-proxy",
-			"status":       "up",
-			"upstream":     s.Cfg.Upstream,
-			"mode":         s.DefaultMode(),
-			"port":         s.Cfg.Port,
-			"dataDir":      s.Cfg.DataDir,
-			"cookieCount":  s.Jar.Len(),
-			"sessionLike":  s.Jar.HasSessionHeuristic(),
-			"signKey":      string(SignKey()),
-			"signKeyHex":   SignatureDebug()["key_hex"],
+			"service":     "hunyuan3d-proxy",
+			"status":      "up",
+			"upstream":    s.Cfg.Upstream,
+			"mode":        s.DefaultMode(),
+			"port":        s.Cfg.Port,
+			"dataDir":     s.Cfg.DataDir,
+			"cookieCount": s.Jar.Len(),
+			"sessionLike": s.Jar.HasSessionHeuristic(),
+			"signKey":     string(SignKey()),
+			"signKeyHex":  SignatureDebug()["key_hex"],
 		})
 	})
 
@@ -39,9 +39,9 @@ func buildMux(s *Server, login *LoginService) http.Handler {
 		switch r.Method {
 		case http.MethodGet:
 			writeOK(w, map[string]interface{}{
-				"mode":    s.DefaultMode(),
+				"mode":     s.DefaultMode(),
 				"upstream": s.Cfg.Upstream,
-				"options": []string{ModeMain, ModeConcept},
+				"options":  []string{ModeMain, ModeConcept},
 			})
 		case http.MethodPost, http.MethodPut:
 			q := r.URL.Query().Get("mode")
@@ -121,6 +121,7 @@ func buildMux(s *Server, login *LoginService) http.Handler {
 	mux.HandleFunc("/api/text3d/main", s.HandleMainText3D)
 	mux.HandleFunc("/api/text3d/main/list", s.HandleMainCreationsList)
 	mux.HandleFunc("/api/text3d/assets", s.HandleAssetBoard)
+	mux.HandleFunc("/api/text3d/texture", s.HandleText3DTexture)
 
 	// ---------- official Tencent Cloud ai3d API 3.0 ----------
 	// Docs: https://cloud.tencent.com/document/product/1804/120829
@@ -411,15 +412,30 @@ func buildMux(s *Server, login *LoginService) http.Handler {
 			}
 		}
 		writeOK(w, map[string]interface{}{
-			"service": "hunyuan3d-proxy",
-			"ui":      "place index.html + ui/ next to the binary or at D:/lose",
-			"docs":    []string{"/docs", "/openapi.json", "/api/health", "/api/mode", "/api/login/status", "/api/credit/all", "/api/cloud"},
-			"modes":   []string{ModeMain, ModeConcept},
+			"service":  "hunyuan3d-proxy",
+			"ui":       "place index.html + ui/ next to the binary or at D:/lose",
+			"docs":     []string{"/docs", "/openapi.json", "/api/health", "/api/mode", "/api/login/status", "/api/credit/all", "/api/cloud"},
+			"modes":    []string{ModeMain, ModeConcept},
 			"upstream": s.Cfg.Upstream,
 		})
 	})
 
-	return noStoreStatic(mux)
+	// ---------- MCP over HTTP ----------
+	// The in-process handler this MCP server dispatches tools through is the
+	// mux being built right now, so wire it lazily: buildMux fills this holder
+	// in before it returns, and requests only arrive after that.
+	var selfHandler http.Handler
+	mcpStats := &mcpHTTPStats{}
+	dispatch := func(method, path string, body []byte) (*localResult, error) {
+		return inProcessCall(selfHandler, method, path, body)
+	}
+	mcpHTTP := newMCPServer(mcpToolSet(dispatch), dispatch)
+	mux.HandleFunc("/mcp", s.HandleMCP(mcpHTTP, mcpStats))
+	mux.HandleFunc("/api/mcp/panel", s.HandleMCPPanel(mcpHTTP, mcpStats))
+
+	handler := noStoreStatic(mux)
+	selfHandler = handler
+	return handler
 }
 
 // noStoreStatic forces revalidation on non-API paths. Local UI files change

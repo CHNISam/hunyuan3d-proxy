@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	cloudHost    = "ai3d.tencentcloudapi.com"
-	cloudVersion = "2025-05-13"
-	cloudService = "ai3d"
+	cloudHost          = "ai3d.tencentcloudapi.com"
+	cloudVersion       = "2025-05-13"
+	cloudService       = "ai3d"
 	cloudDefaultRegion = "ap-guangzhou"
 )
 
@@ -143,11 +143,11 @@ func (s *Server) HandleCloud(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case rest == "":
 		writeOK(w, map[string]interface{}{
-			"product":  "ai3d",
-			"version":  cloudVersion,
-			"host":     cloudHost,
-			"docs":     "https://cloud.tencent.com/document/product/1804/120838",
-			"actions":  cloudActions,
+			"product":      "ai3d",
+			"version":      cloudVersion,
+			"host":         cloudHost,
+			"docs":         "https://cloud.tencent.com/document/product/1804/120838",
+			"actions":      cloudActions,
 			"credentialed": cloudSecretID(r) != "",
 		})
 		return
@@ -225,13 +225,13 @@ func (s *Server) HandleCloud(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Hy-Cloud-Action", action)
 		w.WriteHeader(resp.StatusCode)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok":     resp.StatusCode < 400,
-			"source": "tencent-cloud-ai3d",
-			"docs":   "https://cloud.tencent.com/document/product/1804/120838",
-			"action": action,
-			"region": region,
+			"ok":      resp.StatusCode < 400,
+			"source":  "tencent-cloud-ai3d",
+			"docs":    "https://cloud.tencent.com/document/product/1804/120838",
+			"action":  action,
+			"region":  region,
 			"version": cloudVersion,
-			"data":   parsed,
+			"data":    parsed,
 		})
 		return
 	}

@@ -158,8 +158,9 @@ func scrubResult(res CreditResult) CreditResult {
 
 // MainCredits hits BOTH main credit APIs independently.
 // Upstream verified via Playwright:
-//   POST /api/3d/quotainfo  body MUST be {"sceneType":"3dCreations"} (empty {} → HTTP 500)
-//   GET  /api/3d/planCreditInfo
+//
+//	POST /api/3d/quotainfo  body MUST be {"sceneType":"3dCreations"} (empty {} → HTTP 500)
+//	GET  /api/3d/planCreditInfo
 func (s *Server) MainCredits(r *http.Request) map[string]interface{} {
 	quota := scrubResult(s.callUpstream(r, http.MethodPost, ModeMain, "/api/3d/quotainfo",
 		[]byte(`{"sceneType":"3dCreations"}`)))
@@ -189,11 +190,11 @@ func (s *Server) ConceptCredits(r *http.Request) map[string]interface{} {
 	rem := scrubResult(s.callUpstream(r, http.MethodPost, ModeConcept, "/api/game3d/general_info/get_remaining_times", body))
 	userinfo := scrubResult(s.callUpstream(r, http.MethodGet, ModeConcept, "/api/3d/getuserinfo", nil))
 	return map[string]interface{}{
-		"backend":           "concept",
-		"independent":       true,
+		"backend":             "concept",
+		"independent":         true,
 		"get_remaining_times": rem,
-		"getuserinfo":       userinfo,
-		"note":              "Concept credit API is independent of main quotainfo/planCreditInfo.",
+		"getuserinfo":         userinfo,
+		"note":                "Concept credit API is independent of main quotainfo/planCreditInfo.",
 	}
 }
 

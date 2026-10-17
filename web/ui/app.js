@@ -90,10 +90,29 @@
     "geometryGenerationRsp.glbUrl": "几何GLB",
     "geometryGenerationRsp.fbxUrl": "几何FBX",
     "geometryGenerationRsp.imageUrl": "几何预览",
+    // 纹理（贴图）产物 —— 有这一组才是"带材质的成品"
+    "texturePaintingRsp.glbUrl": "★贴图GLB",
+    "texturePaintingRsp.fbxUrl": "贴图FBX",
+    "texturePaintingRsp.imageUrl": "贴图预览",
+    "texturePaintingRsp.pbrImageUrl": "PBR基础色",
+    "texturePaintingRsp.pbrNormalImageUrl": "PBR法线",
+    "texturePaintingRsp.pbrMetallicImageUrl": "PBR金属",
+    "texturePaintingRsp.pbrRoughnessImageUrl": "PBR粗糙",
+    "texturePaintingRsp.quadsInfo": "UV信息",
   };
   const MODEL_KEYS = [
     "textureGlb", "glb", "geometryGlb", "obj", "obj_url",
     "geometryGenerationRsp.glbUrl", "geometryGenerationRsp.fbxUrl",
+    "texturePaintingRsp.glbUrl", "texturePaintingRsp.fbxUrl",
+  ];
+  // 有序展示：成品模型排最前，中间产物在后
+  const ASSET_ORDER = [
+    "texturePaintingRsp.glbUrl", "texturePaintingRsp.fbxUrl",
+    "geometryGenerationRsp.glbUrl", "geometryGenerationRsp.fbxUrl",
+    "texturePaintingRsp.pbrImageUrl", "texturePaintingRsp.pbrNormalImageUrl",
+    "texturePaintingRsp.pbrMetallicImageUrl", "texturePaintingRsp.pbrRoughnessImageUrl",
+    "texturePaintingRsp.imageUrl", "geometryGenerationRsp.imageUrl",
+    "singleImage", "texturePaintingRsp.quadsInfo",
   ];
 
   // ---------- Sensitive display masking ----------
@@ -347,93 +366,25 @@
     );
   }
 
-  function extractCreditSide(res, side) {
-    const root = res.data?.data || res.data || res || {};
-    if (root.main || root.concept) return root[side] || {};
-    if (root.backend === side) return root;
-    if (side === "main" && (root.quotainfo || root.planCreditInfo)) return root;
-    if (side === "concept" && (root.get_remaining_times || root.getuserinfo)) return root;
-    return root;
+  function renderTopCredits(res) {
+    const d = res.data?.data || {};
+    const main = d.main?.remainQuota ?? d.main?.quotainfo?.body?.remainQuota ?? "—";
+    const concept =
+      d.concept?.get_remaining_times?.body?.data?.remainingTimes ??
+      d.concept?.remainingTimes ??
+      "—";
+    const m = $("topCreditMain");
+    const c = $("topCreditConcept");
+    if (m) m.textContent = `main ${main}`;
+    if (c) c.textContent = `concept ${concept}`;
   }
 
-  function renderCreditMain(res) {
-    const d = extractCreditSide(res, "main");
-    const q = d.quotainfo || {};
-    const p = d.planCreditInfo || {};
-    const qBody = q.body || {};
-    $("outCreditMain").textContent = JSON.stringify(
-      {
-        backend: "main",
-        independent: true,
-        remainQuota: d.remainQuota ?? qBody.remainQuota ?? null,
-        totalQuota: d.totalQuota ?? qBody.totalQuota ?? null,
-        consumeQuota: qBody.consumeQuota ?? null,
-        date: qBody.date ?? null,
-        quotainfo: { path: q.path, status: q.status, ok: q.ok, body: q.body, error: q.error },
-        planCreditInfo: { path: p.path, status: p.status, ok: p.ok, body: p.body, error: p.error },
-      },
-      null,
-      2
-    );
-  }
-
-  function renderCreditConcept(res) {
-    const d = extractCreditSide(res, "concept");
-    const r = d.get_remaining_times || {};
-    const u = d.getuserinfo || {};
-    $("outCreditConcept").textContent = JSON.stringify(
-      {
-        backend: "concept",
-        independent: true,
-        remainingTimes:
-          d.remainingTimes ?? r.body?.data?.remainingTimes ?? r.body?.data ?? null,
-        get_remaining_times: { path: r.path, status: r.status, ok: r.ok, body: r.body, error: r.error },
-        user: {
-          nickname: u.body?.nickname || u.body?.userName,
-          userId: u.body?.userId,
-        },
-      },
-      null,
-      2
-    );
-  }
-
-  async function creditMain(silent) {
-    return withToast(
-      "主站积分",
-      async () => {
-        const res = await api("/api/credit/main");
-        renderCreditMain(res);
-        return res;
-      },
-      {
-        silent,
-        okMsg: (r) => `remainQuota=${r.data?.data?.remainQuota ?? "?"}`,
-      }
-    );
-  }
-  async function creditConcept(silent) {
-    return withToast(
-      "概念站积分",
-      async () => {
-        const res = await api("/api/credit/concept");
-        renderCreditConcept(res);
-        return res;
-      },
-      {
-        silent,
-        okMsg: (r) =>
-          `remainingTimes=${r.data?.data?.get_remaining_times?.body?.data?.remainingTimes ?? "?"}`,
-      }
-    );
-  }
   async function creditAll(silent) {
     return withToast(
       "积分查询",
       async () => {
         const res = await api("/api/credit/all");
-        renderCreditMain(res);
-        renderCreditConcept(res);
+        renderTopCredits(res);
         return res;
       },
       {
@@ -488,11 +439,22 @@
     if (assetSource !== "all") list = list.filter((x) => x.source === assetSource);
     if (assetStatus !== "all")
       list = list.filter((x) => (x.status || "").toLowerCase() === assetStatus);
+    // 两个上游的时间格式不同：main 是 Unix 秒（数字），concept 是 ISO-8601
+    // 字符串。只认数字会让所有 concept 任务得 0 分而沉到 main 之后，
+    // 刚生成的模型就永远不在列表顶部。
     const ts = (it) => {
       const v = it.createdAt;
       if (typeof v === "number") return v;
-      const n = parseFloat(v);
-      return Number.isFinite(n) ? n : 0;
+      if (typeof v === "string") {
+        const trimmed = v.trim();
+        if (/^\d+(\.\d+)?$/.test(trimmed)) {
+          const n = parseFloat(trimmed);
+          if (Number.isFinite(n)) return n;
+        }
+        const parsed = Date.parse(trimmed);
+        if (Number.isFinite(parsed)) return parsed / 1000;
+      }
+      return 0;
     };
     list.sort((a, b) => ts(b) - ts(a));
     return list;
@@ -523,9 +485,16 @@
       const preview = it.previewUrl || "";
       const assets = it.assets || {};
       const links = [];
-      for (const [k, v] of Object.entries(assets)) {
-        if (!v || !String(v).startsWith("http")) continue;
-        if (k.includes("invisible_wall") || k === "air_wall") continue;
+      // 成品模型排最前，其余中间产物按固定优先级；未知的排在最后。
+      const rank = (k) => {
+        const i = ASSET_ORDER.indexOf(k);
+        return i === -1 ? ASSET_ORDER.length + 1 : i;
+      };
+      const entries = Object.entries(assets)
+        .filter(([k, v]) => v && String(v).startsWith("http"))
+        .filter(([k]) => !k.includes("invisible_wall") && k !== "air_wall")
+        .sort((a, b) => rank(a[0]) - rank(b[0]));
+      for (const [k, v] of entries) {
         const cls = isModelKey(k) ? "model" : "";
         links.push(
           `<a class="${cls}" href="${v}" target="_blank" rel="noreferrer" title="${k}">${assetLabel(k)}</a>`
@@ -559,8 +528,20 @@
             ${created ? `<span>${created}</span>` : ""}
           </div>
           ${notes ? `<div class="asset-notes">${notes}</div>` : ""}
+          ${
+            it.upstreamRequest || it.modelChain
+              ? `<div class="asset-upstream" title="该任务实际调用的上游接口与模型链路">` +
+                `<span class="up-label">上游接口</span>` +
+                `<code title="上游记录的 reqPath（注意：它记录的是任务最后一步，可能不是实际提交的入口）">${it.upstreamRequest || "—"}</code>` +
+                (it.modelChain
+                  ? `<span class="up-chain" title="实际执行的模型链路：${it.modelChain}">` +
+                    `${String(it.modelChain).split(";").filter(Boolean).slice(-2).join(" → ")}</span>`
+                  : "") +
+                `</div>`
+              : ""
+          }
           ${it.error ? `<div class="asset-err">${it.error}</div>` : ""}
-          <div class="asset-links">${links.slice(0, 10).join("") || '<span class="hint">暂无文件 URL</span>'}</div>
+          <div class="asset-links">${links.slice(0, 12).join("") || '<span class="hint">暂无文件 URL</span>'}</div>
           <div class="asset-notes">${(it.id || "").slice(-20)}</div>
         </div>
       `;
@@ -652,9 +633,6 @@
       { okMsg: () => "会话已清空" }
     );
   $("btnImport").onclick = doImport;
-  $("btnCreditMain").onclick = () => creditMain(false);
-  $("btnCreditConcept").onclick = () => creditConcept(false);
-  $("btnCreditAll").onclick = () => creditAll(false);
   $("btnSign").onclick = () =>
     withToast("签名调试", async () => {
       const res = await api("/api/sign/debug");
@@ -766,20 +744,351 @@
       refreshHealth(true).then(() =>
         refreshLogin(true).then(() => {
           if (qrTicket) doPoll(true);
+          creditAll(true);
           refreshAssets(true);
+          refreshMcpPanel(true);
         })
       );
     }
   });
+
+
+  // ================= MCP 面板 =================
+  // 展示内置 MCP 服务：连接状态、端点、令牌、工具目录（含 schema）、接入配置。
+  // 数据来自服务端 GET /api/mcp/panel（只读，不含任何生成副作用）。
+
+  const MCP_CREDIT_TOOLS = ["hunyuan_generate_concept", "hunyuan_generate_main"];
+  let mcpPanelCache = null;
+  let mcpTokenVisible = false;
+
+  function mcpSetStatus(el, status, text) {
+    if (!el) return;
+    el.setAttribute("data-status", status);
+    el.textContent = text;
+  }
+
+  function mcpEsc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  // 渲染一个工具的 inputSchema：属性表 + 必填标记 + 类型/枚举/默认值
+  function mcpSchemaTable(schema) {
+    const props = (schema && schema.properties) || {};
+    const required = (schema && schema.required) || [];
+    const names = Object.keys(props);
+    if (!names.length) {
+      return `<div class="hint">无参数</div>`;
+    }
+    const rows = names
+      .map((n) => {
+        const p = props[n] || {};
+        let type = p.type || "any";
+        if (Array.isArray(p.enum) && p.enum.length) type += " · " + p.enum.join("|");
+        if (p.default !== undefined) type += ` · 默认 ${JSON.stringify(p.default)}`;
+        const isReq = required.indexOf(n) >= 0;
+        return (
+          `<tr><td class="pname">${mcpEsc(n)}${isReq ? '<span class="req">必填</span>' : ""}</td>` +
+          `<td class="ptype">${mcpEsc(type)}</td>` +
+          `<td>${mcpEsc(p.description || "")}</td></tr>`
+        );
+      })
+      .join("");
+    return (
+      `<div class="mcp-params"><table>` +
+      `<thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead>` +
+      `<tbody>${rows}</tbody></table></div>`
+    );
+  }
+
+  // schema 可移植性检查（参考 MCP Inspector 的做法）：合法 JSON Schema 但
+  // 真实客户端会拒绝/误处理的构造，在这里提前提示服务端作者。
+  function mcpSchemaFindings(schema) {
+    const findings = [];
+    const props = (schema && schema.properties) || {};
+    Object.keys(props).forEach((n) => {
+      const p = props[n] || {};
+      if (p.type === undefined && !p.enum && !p.anyOf && !p.oneOf) {
+        findings.push(`参数 ${n} 未声明 type`);
+      }
+      if (Array.isArray(p.enum) && p.enum.some((v) => typeof v !== "string")) {
+        findings.push(`参数 ${n} 的 enum 含非字符串值`);
+      }
+    });
+    if (schema && schema.additionalProperties === false && !Object.keys(props).length) {
+      findings.push("additionalProperties=false 但无 properties：客户端会拒绝任何入参");
+    }
+    return findings;
+  }
+
+  function renderMcpTools(tools) {
+    const list = $("mcpToolList");
+    if (!list) return;
+    const onlyCredit = $("mcpOnlyCredit") && $("mcpOnlyCredit").checked;
+    const shown = (tools || []).filter(
+      (t) => !onlyCredit || MCP_CREDIT_TOOLS.indexOf(t.name) >= 0
+    );
+    list.setAttribute("data-tool-count", String(shown.length));
+    if (!shown.length) {
+      list.innerHTML = `<div class="hint">没有匹配的工具</div>`;
+      if ($("mcpTabCount")) $("mcpTabCount").textContent = "0";
+      return;
+    }
+    list.innerHTML = "";
+    shown.forEach((t) => {
+      const credit = MCP_CREDIT_TOOLS.indexOf(t.name) >= 0;
+      const findings = mcpSchemaFindings(t.inputSchema);
+      const el = document.createElement("div");
+      el.className = "mcp-tool";
+      el.innerHTML =
+        `<div class="mcp-tool-head">` +
+        `<span class="mcp-tool-caret">▶</span>` +
+        `<span class="mcp-tool-name">${mcpEsc(t.name)}</span>` +
+        `<span class="mcp-flag ${credit ? "credit" : "readonly"}">${credit ? "消耗积分" : "只读"}</span>` +
+        `<span class="mcp-tool-desc">${mcpEsc(t.description)}</span>` +
+        `<span class="mcp-call-status" data-status="idle"></span>` +
+        `</div>` +
+        `<div class="mcp-tool-body">` +
+        `<div class="mcp-sub">入参</div>` +
+        mcpSchemaTable(t.inputSchema) +
+        (findings.length
+          ? `<div class="mcp-schema-warn">schema 提示：${findings.map(mcpEsc).join("；")}</div>`
+          : "") +
+        `</div>`;
+      el.querySelector(".mcp-tool-head").addEventListener("click", () => {
+        el.classList.toggle("open");
+      });
+      list.appendChild(el);
+    });
+    if ($("mcpTabCount")) $("mcpTabCount").textContent = String(shown.length);
+  }
+
+  function renderMcpConnect(p) {
+    const authOn = p.authRequired === true && p.token;
+    const http =
+      `// MCP Streamable HTTP${authOn ? "" : "（当前无需鉴权）"}\n` +
+      `POST ${p.endpoint}\n` +
+      (authOn ? `Authorization: Bearer ${p.token}\n` : "") +
+      `Content-Type: application/json\n\n` +
+      `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`;
+    const curl =
+      `curl -s ${p.endpoint} \\\n` +
+      (authOn ? `  -H 'Authorization: Bearer ${p.token}' \\\n` : "") +
+      `  -H 'Content-Type: application/json' \\\n` +
+      `  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"${p.protocol}","capabilities":{}}}'`;
+    // 工具清单：可直接喂给理解 MCP 的客户端
+    const toolsJson = JSON.stringify(
+      {
+        endpoint: p.endpoint,
+        authRequired: p.authRequired === true,
+        tools: (p.tools || []).map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+        })),
+      },
+      null,
+      2
+    );
+    if ($("mcpCfgHttp")) $("mcpCfgHttp").textContent = http;
+    if ($("mcpCfgTools")) $("mcpCfgTools").textContent = toolsJson;
+    if ($("mcpCfgCurl")) $("mcpCfgCurl").textContent = curl;
+  }
+
+  async function refreshMcpPanel(silent) {
+    const badge = $("mcpStatusBadge");
+    mcpSetStatus(badge, "connecting", "连接中…");
+    const errBox = $("mcpError");
+    if (errBox) errBox.hidden = true;
+    try {
+      const res = await fetch(base() + "/api/mcp/panel", { cache: "no-store" });
+      const body = await res.json();
+      if (!res.ok || !body || body.ok !== true) {
+        throw new Error((body && body.error) || "HTTP " + res.status);
+      }
+      const p = body.data;
+      mcpPanelCache = p;
+
+      mcpSetStatus(badge, "connected", "已启用");
+      if ($("mcpTransport")) $("mcpTransport").textContent = p.transport;
+      if ($("mcpProtocol")) $("mcpProtocol").textContent = p.protocol;
+      if ($("mcpEndpoint")) {
+        $("mcpEndpoint").textContent = p.endpoint;
+        $("mcpEndpoint").title = p.endpoint;
+      }
+      if ($("mcpToolCount")) $("mcpToolCount").textContent = String(p.toolCount);
+      const st = p.stats || {};
+      if ($("mcpCalls")) {
+        $("mcpCalls").textContent =
+          `调用 ${st.toolCalls || 0} / 请求 ${st.requests || 0}` +
+          (st.errors ? ` · 错误 ${st.errors}` : "");
+      }
+      if ($("mcpLast")) {
+        $("mcpLast").textContent = st.lastMethod
+          ? `${st.lastMethod}${st.lastTool ? " " + st.lastTool : ""}${
+              st.lastAt ? " · " + String(st.lastAt).replace("T", " ").slice(11, 19) : ""
+            }`
+          : "尚无调用";
+      }
+      const authOn = p.authRequired === true && p.token;
+      if ($("mcpTokenRow")) $("mcpTokenRow").hidden = !authOn;
+      if ($("mcpNoAuthRow")) $("mcpNoAuthRow").hidden = !!authOn;
+      if (authOn && $("mcpToken")) {
+        $("mcpToken").textContent = mcpTokenVisible ? p.token : "•".repeat(16);
+      }
+      if ($("mcpToolHint")) {
+        $("mcpToolHint").textContent =
+          `共 ${p.toolCount} 个工具 · 消耗积分：${(p.spendsCredit || []).join("、") || "无"}`;
+      }
+      const warnBox = $("mcpWarning");
+      if (warnBox) {
+        if (!authOn && p.warning) {
+          warnBox.hidden = false;
+          warnBox.textContent = "⚠ " + p.warning;
+        } else {
+          warnBox.hidden = true;
+        }
+      }
+      renderMcpTools(p.tools);
+      renderMcpConnect(p);
+      if (!silent) toast("ok", "MCP 已就绪", `${p.toolCount} 个工具 · ${p.transport}`);
+    } catch (e) {
+      mcpSetStatus(badge, "error", "不可用");
+      if (errBox) {
+        errBox.hidden = false;
+        errBox.textContent = "MCP 面板加载失败：" + (e && e.message ? e.message : e);
+      }
+      if ($("mcpToolList")) {
+        $("mcpToolList").innerHTML = `<div class="hint">无法加载工具目录</div>`;
+      }
+      if (!silent) toast("err", "MCP 面板失败", e && e.message ? e.message : String(e));
+    }
+  }
+
+  function mcpCopy(text, label) {
+    const done = () => toast("ok", "已复制", label);
+    const fail = (e) => toast("err", "复制失败", e && e.message ? e.message : String(e));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(fail);
+      return;
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      done();
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  // 校验令牌是否真的能通过 /mcp（用 GET 探测，不消耗积分）
+  async function mcpProbe() {
+    const badge = $("mcpStatusBadge");
+    const rej = $("mcpRejected");
+    if (rej) rej.hidden = true;
+    try {
+      const headers = {};
+      if (mcpPanelCache && mcpPanelCache.authRequired && mcpPanelCache.token) {
+        headers.Authorization = "Bearer " + mcpPanelCache.token;
+      }
+      const res = await fetch(base() + "/mcp", { cache: "no-store", headers });
+      const body = await res.json().catch(() => null);
+      if (res.status === 200 && body && body.ok) {
+        mcpSetStatus(badge, "connected", "已启用 · 鉴权通过");
+        if (!rej) toast("ok", "MCP 探测成功", body.data.tools + " 个工具");
+        return;
+      }
+      if (res.status === 401) {
+        mcpSetStatus(badge, "error", "鉴权失败");
+        if (rej) {
+          rej.hidden = false;
+          rej.textContent = "鉴权被拒绝（401）：令牌不匹配，请刷新页面重取。";
+        }
+        return;
+      }
+      mcpSetStatus(badge, "error", "响应异常");
+      if (rej) {
+        rej.hidden = false;
+        rej.textContent = "探测返回异常：HTTP " + res.status;
+      }
+    } catch (e) {
+      mcpSetStatus(badge, "error", "不可达");
+      if (rej) {
+        rej.hidden = false;
+        rej.textContent = "探测失败：" + (e && e.message ? e.message : e);
+      }
+    }
+  }
+
+  function bindMcpPanel() {
+    const sec = $("mcpSection");
+    if (!sec) return;
+
+    if ($("btnMcpRefresh")) {
+      $("btnMcpRefresh").addEventListener("click", () => {
+        refreshMcpPanel(false).then(mcpProbe);
+      });
+    }
+    if ($("btnMcpToggleToken")) {
+      $("btnMcpToggleToken").addEventListener("click", () => {
+        mcpTokenVisible = !mcpTokenVisible;
+        $("btnMcpToggleToken").textContent = mcpTokenVisible ? "隐藏" : "显示";
+        if (mcpPanelCache && $("mcpToken")) {
+          $("mcpToken").textContent = mcpTokenVisible ? mcpPanelCache.token : "•".repeat(16);
+        }
+      });
+    }
+    if ($("btnMcpCopyConfig")) {
+      $("btnMcpCopyConfig").addEventListener("click", () => {
+        if (!mcpPanelCache) return toast("warn", "尚未加载", "请先刷新 MCP 面板");
+        mcpCopy($("mcpCfgCurl") ? $("mcpCfgCurl").textContent : "", "调用示例");
+      });
+    }
+    if ($("btnMcpCopyCurl")) {
+      $("btnMcpCopyCurl").addEventListener("click", () => {
+        if (!mcpPanelCache) return toast("warn", "尚未加载", "请先刷新 MCP 面板");
+        mcpCopy($("mcpCfgCurl") ? $("mcpCfgCurl").textContent : "", "curl 调用示例");
+      });
+    }
+    if ($("mcpOnlyCredit")) {
+      $("mcpOnlyCredit").addEventListener("change", () => {
+        if (mcpPanelCache) renderMcpTools(mcpPanelCache.tools);
+      });
+    }
+    const tabs = $("mcpTabs");
+    if (tabs) {
+      tabs.querySelectorAll(".chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          tabs.querySelectorAll(".chip").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const which = btn.getAttribute("data-tab");
+          $("tab-mcp-tools").hidden = which !== "tools";
+          $("tab-mcp-connect").hidden = which !== "connect";
+        });
+      });
+    }
+  }
+
+  bindMcpPanel();
 
   handleOAuthReturn();
   (async () => {
     toast("info", "自动连接", base());
     await refreshHealth(true);
     await refreshLogin(true);
+    await creditAll(true);
     await refreshAssets(true);
     // load an extra page of history on first load
     await refreshAssets(true, true);
+    await refreshMcpPanel(true);
     toast("ok", "就绪", "所有操作都会有 Toast 提示");
   })();
 })();

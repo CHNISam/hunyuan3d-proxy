@@ -527,9 +527,9 @@ func (ls *LoginService) exchangeOAuth(r *http.Request, provider, appID, code, st
 	}
 	// JSON body token salvage
 	return map[string]interface{}{
-		"ok":    false,
-		"joint": joint,
-		"note":  "joint + legacy exchange inconclusive; use Cookie 导入 if needed",
+		"ok":       false,
+		"joint":    joint,
+		"note":     "joint + legacy exchange inconclusive; use Cookie 导入 if needed",
 		"attempts": attempts,
 		"state":    ls.currentState(),
 	}
@@ -633,11 +633,11 @@ func (ls *LoginService) probeLoginPaths(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	writeOK(w, map[string]interface{}{
-		"ok":      false,
-		"kind":    kind,
+		"ok":       false,
+		"kind":     kind,
 		"attempts": attempts,
-		"state":   ls.currentState(),
-		"note":    "upstream did not confirm; host login page injects exact paths 鈥?use cookie import or WeChat/QQ OAuth if probes fail",
+		"state":    ls.currentState(),
+		"note":     "upstream did not confirm; host login page injects exact paths 鈥?use cookie import or WeChat/QQ OAuth if probes fail",
 	})
 }
 

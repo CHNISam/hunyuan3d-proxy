@@ -20,6 +20,9 @@ type text3dRequest struct {
 	APose        bool   `json:"apose,omitempty"`
 	WorksType    *int   `json:"worksType,omitempty"`
 	Mode         string `json:"mode,omitempty"` // concept-design | text-geometry | both
+	// DisablePBR turns OFF the main-site PBR texture stage. PBR is ON by
+	// default because a model without PBR maps has no material at all.
+	DisablePBR bool `json:"disablePbr,omitempty"`
 }
 
 // HandleText3DGenerate POST /api/text3d/generate
@@ -123,7 +126,7 @@ func (s *Server) HandleText3DGenerate(w http.ResponseWriter, r *http.Request) {
 			"title":         req.Prompt,
 			"style":         styleToMainStyle(req.Style),
 			"prompt":        req.Prompt,
-			"enable_pbr":    false,
+			"enable_pbr":    !req.DisablePBR,
 			"enableLowPoly": false,
 			"faceCount":     req.FaceCount,
 		}
@@ -220,7 +223,7 @@ func (s *Server) HandleMainText3D(w http.ResponseWriter, r *http.Request) {
 		"title":         req.Prompt,
 		"style":         styleToMainStyle(req.Style),
 		"prompt":        req.Prompt,
-		"enable_pbr":    true,
+		"enable_pbr":    !req.DisablePBR,
 		"enableLowPoly": false,
 		"faceCount":     face,
 	}

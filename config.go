@@ -56,16 +56,28 @@ func LoadConfig() Config {
 	}
 }
 
+// Host returns the bind host. Defaults to loopback: the console has no
+// authentication of its own, and /mcp can spend credits without confirmation,
+// so binding every interface must be an explicit choice (HOST=0.0.0.0).
+func (c Config) Host() string {
+	h := strings.TrimSpace(os.Getenv("HOST"))
+	if h == "" {
+		return "127.0.0.1"
+	}
+	return h
+}
+
 // Addr returns the listen address.
 func (c Config) Addr() string {
+	// An explicit ":port" keeps its meaning (all interfaces) for compatibility.
 	if strings.HasPrefix(c.Port, ":") {
 		return c.Port
 	}
 	// allow bare port
 	if _, err := strconv.Atoi(c.Port); err == nil {
-		return ":" + c.Port
+		return c.Host() + ":" + c.Port
 	}
-	return ":" + c.Port
+	return c.Host() + ":" + c.Port
 }
 
 // RefererFor returns the appropriate Referer for a mode.

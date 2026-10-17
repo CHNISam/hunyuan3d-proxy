@@ -101,6 +101,34 @@ POST /api/3d/notice/list|statusUpdate
 
 ---
 
+
+## 选 main 还是 concept？
+
+两个平台**接口、积分、能力都独立**，选错会白花积分。
+
+| | **concept**（概念站） | **main**（主站） |
+|---|---|---|
+| 本地生成端点 | `POST /api/text3d/generate` | `POST /api/text3d/main` |
+| 上游前缀 | `/game3d/*` | `/api/3d/*` |
+| 积分 | `POST /game3d/general_info/get_remaining_times` | `POST /api/3d/quotainfo` |
+| 单次产出 | 按 `mode` 出设计图/几何 | **固定 4 个候选**（`count=1` 被上游拒绝） |
+| 后续加工 | ✅ 纹理/UV/分割/低模/绑定/动作 | ❌ 基本没有 |
+| `style` 枚举 | `hand_drawn` `q_version` `steampunk` `futuristic` `pixel` `low-poly` | `cartoon` `stone` `celadon` `chinese` `cyberpunk` `hand_drawn` |
+| 模型版本 | `v3.0` `v3.1` `v3.5-preview` | `v3.1` `v3.5` |
+| 签名 | 不需要 | 部分接口需要（见 `docs/signature.md`） |
+
+**选择建议**
+
+- 要**可交付模型**、要**加纹理**、要控制面数或走后续管线 → **concept**
+- 只想**快速拿几个候选**挑一个、不需要加工 → **main**
+- 两个池子独立，一边用完可换另一边
+
+**`style` 名不通用**：`concept` 传 `cartoon`、`main` 传 `low-poly` 都会被拒绝
+（本地已做严格校验并报出合法取值）。
+
+`POST /api/mode?mode=main|concept` 只影响**未显式指定 mode 的裸透传**；
+`/api/text3d/generate` 恒走 concept，`/api/text3d/main` 恒走 main。
+
 ## 网页端 concept 功能代理
 
 ```text
@@ -294,3 +322,103 @@ curl -X POST http://127.0.0.1:8810/api/cloud/submit-pro \
 - `D:\lose\docs\api-discovery.md` — 逆向过程
 - `D:\lose\docs\signature.md` — 网页端签名算法
 - 官方云 API 请始终以 https://cloud.tencent.com/document/product/1804 为准
+
+## 纹理（把白模变成带 PBR 的成品）
+
+几何生成的 GLB 是**白模**（`materials=0`）。要拿到带贴图的成品，需再走纹理阶段。
+
+### 本地封装端点（推荐）
+
+```sh
+curl -s -X POST http://127.0.0.1:8812/api/text3d/texture \
+  -H 'Content-Type: application/json' \
+  -d '{"worksId":"<几何任务的 worksId>","method":"image","keepUv":false}'
+```
+
+传 `worksId` 即自动推导 `fbxUrl`/`imageUrl`。返回 `worksId`（新任务）供轮询。
+`method`：`image`（默认）| `views` | `text`。
+`text` 为**文生纹理**（提示词直接生成贴图），会自动选用已 UV 展开的 fbx。
+`keepUv` 实测两种取值都能出成品（GLB 均含 `TEXCOORD_0`）。
+
+### 直接调用上游：`image2texture_v31`
+
+```sh
+curl -s -X POST http://127.0.0.1:8812/game3d/texture_painting/image2texture_v31 \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "fbxUrl":            "<几何任务的 geometryGenerationRsp.fbxUrl>",
+    "imageUrl":          "<几何任务的 geometryGenerationRsp.imageUrl>",
+    "dependOnWorksId":   "<几何任务的 worksId>",
+    "worksType":         2,
+    "requestId":         "go<12位随机>",
+    "modelVersion":      "v3.1",
+    "keepUv":            false
+  }'
+```
+
+`worksType` / `requestId` / `modelVersion` 为**必需**，缺任一返回 `200002 输入参数错误`。
+
+完成后 `resultUrls` 出现：
+
+| 字段 | 含义 |
+|------|------|
+| `texturePaintingRsp.glbUrl` | ★ 带 PBR 贴图的成品模型 |
+| `texturePaintingRsp.fbxUrl` | 成品 FBX |
+| `texturePaintingRsp.pbrImageUrl` | PBR 基础色 |
+| `texturePaintingRsp.pbrNormalImageUrl` | 法线 |
+| `texturePaintingRsp.pbrMetallicImageUrl` | 金属度 |
+| `texturePaintingRsp.pbrRoughnessImageUrl` | 粗糙度 |
+
+### 验收标准
+
+| 指标 | 白模 | 成品 |
+|------|------|------|
+| materials / images / textures | 0 / 0 / 0 | 1 / 3 / 3 |
+| 大小 | ~0.3 MB | ~16 MB |
+
+**不要只看"有 glbUrl"就判定成功** —— 白模同样有 glbUrl，必须检查 `materials > 0`。
+
+### 文生纹理：用 `texture_edit_local`，**不是** `text2texture_v31`
+
+⚠️ **`/game3d/texture_painting/text2texture_v31` 是死路**：它比其它路径多一步
+`hunyuan-3d-texture-preprocess-v1.0`，该步稳定返回
+`errorCode: 400 "http client codec StatusCode: Bad Request"`（实测 7/7 全失败）。
+
+**真正的文生纹理入口是 `texture_edit_local` + `editType:1`**（SPA 抓包确认）：
+
+```json
+{
+  "fbxUrl":          "<已 UV 展开的 fbx，见下方注意事项>",
+  "worksId":         "<作品 worksId>",
+  "editType":        1,
+  "prompt":          "青铜铸造的台灯，做旧金属质感",
+  "localNames":      [],
+  "segmentationInfo": "",
+  "requestId":       "go<随机>"
+}
+```
+
+它走 `hunyuan-3d-texture-edit-text-v1.0`，**实测成功**（24.2MB 成品，materials=1，贴图 3 张）。
+
+**关键注意事项 —— fbxUrl 必须已 UV 展开**：
+
+| 传入的 fbx | 结果 |
+|-----------|------|
+| 几何任务的 `geometryGenerationRsp.fbxUrl`（白模，无 UV） | 跑完但**不产出** `texturePaintingRsp` |
+| 上一次纹理阶段的 `texturePaintingRsp.fbxUrl`（已 UV） | ✅ 产出完整贴图 |
+
+本地封装端点的 `method="text"` **已自动优先选用已 UV 展开的 fbx**。
+
+`editType` 其它取值（来自 SPA 枚举）：`2`=材质 `3`=图生纹理 `4`=PBR 属性 `5`=多视图。
+
+### 四种纹理路径对照
+
+| 路径 | 输入 | 实测 |
+|------|------|------|
+| `texture_edit_local` (editType=1) | fbx(UV) + prompt | ✅ **文生纹理** |
+| `image2texture_v31` | fbx + 渲染图 | ✅ 5/5 |
+| `views2texture` | fbx + 四视图 | ✅ 1/1 |
+| `text2texture_v31` | fbx + prompt | ❌ 7/7 失败，**勿用** |
+
+---
+

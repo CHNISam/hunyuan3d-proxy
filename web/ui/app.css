@@ -101,6 +101,8 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 }
 .badge.ok { color: var(--ok); border-color: rgba(62,207,142,.35); background: rgba(62,207,142,.08); }
 .badge.err { color: var(--err); border-color: rgba(255,107,107,.35); background: rgba(255,107,107,.08); }
+.badge.credit { font-variant-numeric: tabular-nums; color: #c9d8ff; border-color: rgba(91,140,255,.35); background: rgba(91,140,255,.1); }
+.badge.credit::before { content: "◆"; font-size: 9px; opacity: .7; }
 
 .layout {
   display: grid;
@@ -133,14 +135,13 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 }
 .chip.active { background: rgba(91,140,255,.2); color: #d7e3ff; }
 
-.grid-3, .grid-2, .credit-pair, .login-status, .form-row, .row, .docs-row {
+.grid-3, .grid-2, .login-status, .form-row, .row, .docs-row {
   display: flex; gap: 10px; flex-wrap: wrap;
 }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .row.gap { gap: 8px; }
 .form-row { align-items: end; margin: 8px 0; }
-.credit-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
 .stat {
   background: var(--bg2);
@@ -181,10 +182,9 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
   content: ""; flex: 1; height: 1px; background: var(--line);
 }
 
-.credit-panel, .cloud-map-item {
+.cloud-map-item {
   background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
 }
-.credit-title { font-weight: 650; margin-bottom: 6px; }
 .hint { color: var(--muted); font-size: 12px; margin: 4px 0 10px; }
 
 .out {
@@ -345,11 +345,124 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 
 @media (max-width: 980px) {
   .span-7, .span-5 { grid-column: span 12; }
-  .grid-3, .credit-pair, .grid-2, .login-status { grid-template-columns: 1fr 1fr; }
+  .grid-3, .grid-2, .login-status { grid-template-columns: 1fr 1fr; }
   .qr-box { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
-  .grid-3, .credit-pair, .grid-2, .login-status { grid-template-columns: 1fr; }
+  .grid-3, .grid-2, .login-status { grid-template-columns: 1fr; }
   .layout { padding: 8px 12px 24px; }
   .topbar { padding: 12px; }
+}
+
+/* ---------- MCP 面板 ---------- */
+#mcpSection .card-head { align-items: center; }
+
+/* 连接状态契约：disconnected → connecting → connected / error */
+#mcpStatusBadge[data-status="connected"] { color: var(--ok); border-color: rgba(62,207,142,.35); background: rgba(62,207,142,.08); }
+#mcpStatusBadge[data-status="connecting"] { color: var(--warn); border-color: rgba(240,180,41,.35); background: rgba(240,180,41,.08); }
+#mcpStatusBadge[data-status="error"] { color: var(--err); border-color: rgba(255,107,107,.35); background: rgba(255,107,107,.08); }
+#mcpStatusBadge[data-status="disconnected"] { color: var(--muted); }
+
+.mcp-token-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 12px 0 4px; padding: 10px 12px;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 10px;
+}
+.mcp-token-row .label { color: var(--muted); font-size: 12px; }
+.mcp-token-row code.mono { font-family: var(--mono); font-size: 12px; color: #c9d8ff; letter-spacing: .3px; }
+.mcp-token-row .hint { flex: 1 1 280px; }
+
+.mcp-error, .mcp-rejected {
+  margin: 10px 0; padding: 10px 12px; border-radius: 10px; font-size: 13px;
+}
+.mcp-error { color: #ffb4b4; background: rgba(255,107,107,.1); border: 1px solid rgba(255,107,107,.3); }
+.mcp-rejected { color: #ffd79a; background: rgba(240,180,41,.1); border: 1px solid rgba(240,180,41,.3); }
+
+.mcp-tool-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 10px 0; }
+
+.mcp-tool-list { display: flex; flex-direction: column; gap: 8px; }
+
+.mcp-tool {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card2);
+  overflow: hidden;
+}
+.mcp-tool-head {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  cursor: pointer; user-select: none;
+}
+.mcp-tool-head:hover { background: rgba(255,255,255,.03); }
+.mcp-tool-name { font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+.mcp-tool-desc {
+  color: var(--muted); font-size: 12px; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mcp-tool.open .mcp-tool-desc { white-space: normal; }
+.mcp-tool-caret { color: var(--muted); font-size: 11px; transition: transform .15s; }
+.mcp-tool.open .mcp-tool-caret { transform: rotate(90deg); }
+
+.mcp-tool-body { display: none; padding: 0 12px 12px; border-top: 1px solid var(--line); }
+.mcp-tool.open .mcp-tool-body { display: block; }
+
+.mcp-flag {
+  font-size: 10.5px; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+}
+.mcp-flag.credit { color: var(--warn); border-color: rgba(240,180,41,.35); background: rgba(240,180,41,.08); }
+.mcp-flag.readonly { color: var(--ok); border-color: rgba(62,207,142,.3); background: rgba(62,207,142,.07); }
+
+/* 每个工具的单次调用状态：idle → pending → ok / error */
+.mcp-call-status { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.mcp-call-status[data-status="pending"] { color: var(--warn); }
+.mcp-call-status[data-status="ok"] { color: var(--ok); }
+.mcp-call-status[data-status="error"] { color: var(--err); }
+
+.mcp-sub { color: var(--muted); font-size: 12px; margin: 10px 0 6px; }
+.mcp-code {
+  margin: 0 0 10px; padding: 10px 12px; border-radius: 10px;
+  background: var(--bg2); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  color: #cfd6e4; white-space: pre-wrap; word-break: break-all;
+  max-height: 260px; overflow: auto;
+}
+.mcp-params { margin: 8px 0 0; }
+.mcp-params table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mcp-params th, .mcp-params td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.mcp-params th { color: var(--muted); font-weight: 500; font-size: 11px; }
+.mcp-params td.pname { font-family: var(--mono); color: #c9d8ff; white-space: nowrap; }
+.mcp-params td.ptype { color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+.mcp-params .req { color: var(--warn); font-size: 10px; margin-left: 4px; }
+.mcp-schema-warn { color: var(--warn); font-size: 11.5px; margin-top: 6px; }
+
+.mcp-result {
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  background: var(--bg2); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap;
+  word-break: break-word; max-height: 300px; overflow: auto;
+}
+.mcp-result.error { border-color: rgba(255,107,107,.35); color: #ffb4b4; }
+
+.mcp-warning {
+  margin: 10px 0; padding: 10px 12px; border-radius: 10px; font-size: 12.5px;
+  color: #ffd79a; background: rgba(240,180,41,.1); border: 1px solid rgba(240,180,41,.32);
+}
+
+/* 资源看板：上游接口与模型链路 */
+.asset-upstream {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+}
+.asset-upstream .up-label { color: var(--muted); }
+.asset-upstream code {
+  font-family: var(--mono); font-size: 10.5px;
+  color: #c9d8ff; background: rgba(91,140,255,.1);
+  border: 1px solid rgba(91,140,255,.25);
+  border-radius: 6px; padding: 1px 6px;
+  word-break: break-all;
+}
+.asset-upstream .up-chain {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
