@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -110,18 +109,23 @@ func main() {
 	}
 
 	cfg := LoadConfig()
+	// TASK-206 research copy: never expose the upstream console or billing API.
+	if cfg.Host() != "127.0.0.1" || cfg.Addr() != "127.0.0.1:"+cfg.Port || mcpToken() == "" {
+		log.Fatal("research server requires HOST=127.0.0.1, a bare PORT and MCP_HTTP_TOKEN")
+	}
 
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		log.Fatalf("data dir: %v", err)
 	}
-	cookiePath := filepath.Join(cfg.DataDir, "cookies.json")
+	cookiePath := "(memory only)"
 
 	srv, err := NewServer(cfg)
 	if err != nil {
 		log.Fatalf("server init: %v", err)
 	}
-	srv.Jar.SetPath(cookiePath)
-	srv.Jar.Reload()
+	// The owner imports only the two Hunyuan session fields for this process.
+	// Never persist a research account session or reuse a previous disk session.
+	srv.Jar = NewJar("")
 
 	login := NewLoginService(srv)
 	mux := buildMux(srv, login)
@@ -139,7 +143,7 @@ func main() {
 	log.Printf("upstream=%s mode=%s cookies=%s", cfg.Upstream, srv.DefaultMode(), cookiePath)
 	log.Printf("health: http://%s/api/health", addr)
 
-	handler := corsMiddleware(mux)
+	handler := researchGate(cfg.Addr(), mux)
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 	}

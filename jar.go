@@ -57,17 +57,22 @@ func (j *Jar) load() {
 // Save writes the jar to disk (best-effort create parent dirs).
 func (j *Jar) Save() error {
 	j.mu.RLock()
+	path := j.path
+	if path == "" {
+		j.mu.RUnlock()
+		return nil // TASK-206: explicitly memory-only research session.
+	}
 	data, err := json.MarshalIndent(j.list, "", "  ")
 	j.mu.RUnlock()
 	if err != nil {
 		return err
 	}
-	if dir := filepath.Dir(j.path); dir != "" && dir != "." {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}
-	return os.WriteFile(j.path, data, 0o600)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // Snapshot returns a copy of all cookies.
