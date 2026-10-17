@@ -1,5 +1,18 @@
 # TASK-206 interactive login probe
 
+## Site and quota scope
+
+- China web edition: https://3d.hunyuan.tencent.com/
+- International web edition: https://hy3d.tencent.ai/
+
+The owner confirmed on 2026-10-17 that the two web editions have independent
+quota pools and expects free quota in both accounts. International account
+balance has not been measured in this pilot. Do not infer it from China results.
+The observed China main-site and Studio balances are also tracked separately;
+neither web edition establishes Tencent Cloud API free-credit eligibility.
+This probe targets the China edition only. No international generation or
+billable cloud API request is authorized by this documentation update.
+
 This opt-in research smoke test uses the repository's WeChat QR flow, keeps
 the session only in memory, and checks account quotas and MCP task queries.
 It never submits generation, texture or cloud billing calls. It does not enable
