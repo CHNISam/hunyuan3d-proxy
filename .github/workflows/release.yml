@@ -17,11 +17,12 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
+          cache: false    # 无第三方依赖（无 go.sum），没什么可缓存
 
       - name: gofmt check
         run: |
@@ -53,9 +54,9 @@ jobs:
       # 纯 Go 标准库实现，无 cgo —— 可以放心交叉编译
       CGO_ENABLED: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -72,7 +73,7 @@ jobs:
           ( cd dist && sha256sum "$name" > "$name.sha256" )
           ls -lh dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: hunyuan3d-proxy-${{ matrix.target }}
           path: dist/*
@@ -85,7 +86,7 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
